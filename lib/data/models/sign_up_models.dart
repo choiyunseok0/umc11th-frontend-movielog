@@ -1,3 +1,5 @@
+// SignUpResult는 회원가입 응답에서 result 안의 회원 정보만 읽는 모델
+//CommonResponse가 응답의 바깥쪽을 읽는다면, SignUpResult는 안쪽을 읽음
 class SignUpResult {
   const SignUpResult({
     required this.memberId,
