@@ -1,11 +1,11 @@
 // 회원가입 화면 -> 닉넴, 이메일의 중복 확인 상태 관리
-// ViewModel이 MemberCheckService 요청하고 Service에서 받은 결과로 화면 상태를 정함
+// ViewModel이 SignUpService 요청하고 Service에서 받은 결과로 화면 상태를 정함
 
 // Service가 false를 반환해도, 화면은 그 값만으로 버튼, 안내 문구를 모두 관리하기 어렵기 때문에 
 // 회원가입 화면에서 필요한 상태를 모아서 관리함
 import 'package:flutter/foundation.dart';
 
-import '../data/services/member_check_service.dart';
+import '../data/services/sign_up_service.dart';
 
 import 'package:dio/dio.dart';
 
@@ -19,8 +19,8 @@ enum CheckStatus { idle, checking, available, duplicated, error }
 class SignUpViewModel extends ChangeNotifier {
   SignUpViewModel(
     this._service,
-  ); // ViewModel을 만들 때 실제 API를 호출할 MemberCheckService를 받아 저장함
-  final MemberCheckService _service;
+  ); // ViewModel을 만들 때 실제 API를 호출할 SignUpService를 받아 저장함
+  final SignUpService _service;
 
   CheckStatus nicknameCheckStatus = CheckStatus.idle;
   String? nicknameErrorText; // 입력칸에 보여줄 오류 문구 (문구 없으면 null)

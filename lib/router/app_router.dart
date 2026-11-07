@@ -1,7 +1,7 @@
 import '../data/services/rating_api_service.dart';
 import '../screens/my_ratings_screen.dart';
 import '../view_models/my_ratings_view_model.dart';
-import '../data/services/member_check_service.dart';
+import '../data/services/sign_up_service.dart';
 import '../view_models/sign_up_view_model.dart';
 
 import 'package:flutter/material.dart';
@@ -38,7 +38,7 @@ abstract final class AppRouter {
       GoRoute(
         path: registerPath,
         builder: (context, state) {
-          final service = context.read<MemberCheckService?>();
+          final service = context.read<SignUpService?>();
           final screen = RegisterScreen(
             onRegistered: () => context.go(homePath),
           );
