@@ -1,3 +1,8 @@
+import 'package:movielog/data/models/common_response.dart';
+import 'package:movielog/data/models/create_member_request.dart';
+import 'package:movielog/data/models/sign_up_models.dart';
+import 'package:movielog/data/services/sign_up_service.dart';
+import 'package:movielog/view_models/learning_member_session.dart';
 import 'package:flutter/material.dart';
 import 'package:movielog/widgets/movielog_button.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -40,8 +45,18 @@ void main() {
     expect(find.text('환영합니다!\n간단한 정보만 입력하고 시작해보세요.'), findsOneWidget);
   });
 
-  testWidgets('입력과 약관 검증이 완료되면 홈으로 이동하고 뒤로 가지 않는다', (tester) async {
-    await tester.pumpWidget(_testApp());
+  testWidgets('중복 확인 후 가입 실패 시 입력을 유지하고 성공 시 영화 목록으로 이동한다', (tester) async {
+    final session = LearningMemberSession();
+    final service = _TestSignUpService();
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<SignUpService>.value(value: service),
+          ChangeNotifierProvider.value(value: session),
+        ],
+        child: _testApp(),
+      ),
+    );
     AppRouter.router.go('/register');
     await tester.pumpAndSettle();
     final button = find.byKey(const Key('registerButton'));
@@ -49,7 +64,7 @@ void main() {
     for (final entry in {
       'nicknameField': '무비러버',
       'emailField': 'movie@example.com',
-      'passwordField': 'password123',
+      'passwordField': 'Password123!',
     }.entries) {
       final field = find.byKey(Key(entry.key));
       await tester.ensureVisible(field);
@@ -61,14 +76,33 @@ void main() {
     await tester.ensureVisible(terms);
     await tester.tap(terms);
     await tester.pump();
+    expect(tester.widget<MovieLogButton>(button).onPressed, isNull);
+    final checks = find.widgetWithText(MovieLogButton, '중복 확인');
+    await tester.ensureVisible(checks.first);
+    await tester.tap(checks.first);
+    await tester.pumpAndSettle();
+    expect(tester.widget<MovieLogButton>(button).onPressed, isNull);
+    await tester.ensureVisible(checks.last);
+    await tester.tap(checks.last);
+    await tester.pumpAndSettle();
+    expect(tester.widget<MovieLogButton>(button).onPressed, isNotNull);
     await tester.ensureVisible(button);
     await tester.tap(button);
     await tester.pumpAndSettle();
-    expect(find.text('오늘은 어떤 영화를 볼까요?'), findsOneWidget);
-    expect(find.byType(NavigationBar), findsOneWidget);
-    await tester.binding.handlePopRoute();
+    expect(find.text('이미 사용 중인 이메일입니다.'), findsOneWidget);
+    expect(session.memberId, isNull);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('passwordField')))
+          .controller!
+          .text,
+      'Password123!',
+    );
+
+    await tester.tap(button);
     await tester.pumpAndSettle();
-    expect(find.text('오늘은 어떤 영화를 볼까요?'), findsOneWidget);
+    expect(session.memberId, 42);
+    expect(AppRouter.router.routeInformationProvider.value.uri.path, '/movies');
     AppRouter.router.go('/start');
     await tester.pumpAndSettle();
   });
@@ -334,6 +368,45 @@ class _TestMovieService extends TmdbMovieService {
       results: results,
       totalPages: 1,
       totalResults: results.length,
+    );
+  }
+}
+
+class _TestSignUpService extends SignUpService {
+  _TestSignUpService() : super(Dio());
+
+  int _calls = 0;
+
+  @override
+  Future<bool> checkNickname(String nickname) async => true;
+
+  @override
+  Future<bool> checkEmail(String email) async => true;
+
+  @override
+  Future<CommonResponse<SignUpResult>> signUp(
+    CreateMemberRequest request,
+  ) async {
+    if (_calls++ == 0) {
+      final options = RequestOptions(path: '/v6/members');
+      throw DioException(
+        requestOptions: options,
+        response: Response(
+          requestOptions: options,
+          statusCode: 409,
+          data: {'message': '이미 사용 중인 이메일입니다.'},
+        ),
+      );
+    }
+    return CommonResponse(
+      isSuccess: true,
+      code: 'OK',
+      message: '',
+      result: SignUpResult(
+        memberId: 42,
+        email: request.email,
+        nickname: request.nickname,
+      ),
     );
   }
 }

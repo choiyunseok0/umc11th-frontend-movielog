@@ -1,3 +1,4 @@
+import '../view_models/learning_member_session.dart';
 import '../data/services/rating_api_service.dart';
 import '../screens/my_ratings_screen.dart';
 import '../view_models/my_ratings_view_model.dart';
@@ -40,7 +41,10 @@ abstract final class AppRouter {
         builder: (context, state) {
           final service = context.read<SignUpService?>();
           final screen = RegisterScreen(
-            onRegistered: () => context.go(homePath),
+            onRegistered: (memberId) {
+              context.read<LearningMemberSession>().setMemberId(memberId);
+              context.go(moviesPath);
+            },
           );
           if (service == null) return screen;
           return ChangeNotifierProvider(

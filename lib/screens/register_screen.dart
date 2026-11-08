@@ -1,8 +1,10 @@
 // 사용자가 보는 회원가입 화면
+// 사용자에게 가입 정보를 입력받고, VM에 전달하고, 결과를 화면에 보여주는 파일임
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../view_models/sign_up_view_model.dart';
+import '../data/models/create_member_request.dart';
 import '../widgets/movielog_button.dart';
 
 import '../theme/app_colors.dart';
@@ -10,7 +12,7 @@ import '../theme/app_colors.dart';
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key, this.onRegistered});
 
-  final VoidCallback? onRegistered;
+  final ValueChanged<int>? onRegistered;
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -35,10 +37,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return null;
   }
 
-  bool get _canSubmit =>
-      _nicknameController.text.trim().length >= 2 &&
+  String? _validateNickname(String? value) {
+    final length = value?.trim().length ?? 0;
+    if (length == 0) return '닉네임을 입력해 주세요.';
+    if (length < 2) return '닉네임은 2자 이상이어야 합니다.';
+    if (length > 12) return '닉네임은 12자 이하여야 합니다.';
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    final password = value ?? '';
+    if (password.isEmpty) return '비밀번호를 입력해 주세요.';
+    if (password.length < 8) return '비밀번호는 8자 이상이어야 합니다.';
+    if (!RegExp(r'[a-z]').hasMatch(password) ||
+        !RegExp(r'[A-Z]').hasMatch(password) ||
+        !RegExp(r'[0-9]').hasMatch(password) ||
+        !RegExp(r'[!@#$%^&*]').hasMatch(password)) {
+      return '대문자, 소문자, 숫자, 특수문자를 모두 포함해 주세요.';
+    }
+    return null;
+  }
+
+  // 1. 가입하기 버튼을 켜기 전에 두 종류의 조건을 확인함
+  bool _canSubmit(SignUpViewModel? vm) =>
+      vm?.canSubmit == true &&
+      _validateNickname(_nicknameController.text) == null &&
       _validateEmail(_emailController.text) == null &&
-      _passwordController.text.length >= 8 &&
+      _validatePassword(_passwordController.text) == null &&
       _agreedToTerms;
 
   @override
@@ -52,11 +77,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void _submit() {
-    final isValid = _formKey.currentState?.validate() ?? false;
-    if (!isValid || !_agreedToTerms) return;
+  Future<void> _submit() async {
+    final vm = context.read<SignUpViewModel?>();
+    if (vm == null ||
+        !_canSubmit(vm) ||
+        !(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
     FocusScope.of(context).unfocus();
-    widget.onRegistered?.call();
+
+    // 2. 가입하기 버튼을 누르면 입력값 세 개를 VM에 보냄
+    // 이 화면이 넘기는 건 Dart 객체이고 toJson()을 호출하고 Dio로 서버에 보내는 건 SignUpService가 맡음
+    final memberId = await vm.submit(
+      CreateMemberRequest(
+        email: _emailController.text,
+        password: _passwordController.text,
+        nickname: _nicknameController.text,
+      ),
+    );
+
+    // 4. 받은 결과에 따라 오류를 보여주거나 회원 번호를 라우터에 넘김
+    // mounted : 응답을 기다리는 동안 이 화면이 닫히지 않았는지 확인하는 코드
+    if (!mounted) return;
+    if (memberId != null) {
+      widget.onRegistered?.call(memberId);
+      return;
+    }
+    if (vm.snackbarMessage case final message?) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   Widget _input({
@@ -72,11 +122,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     CheckStatus? checkStatus,
     VoidCallback? onCheck,
     ValueChanged<String>? onChanged,
+    String? serverError,
+    bool enabled = true,
   }) {
     final hasInput = controller.text.isNotEmpty;
     final error = validator(controller.text);
     final duplicate = checkStatus == CheckStatus.duplicated;
-    final hasError = duplicate || (hasInput && error != null);
+    final hasError =
+        serverError != null || duplicate || (hasInput && error != null);
     final checkError = duplicate
         ? '이미 사용 중인 $label입니다.'
         : checkStatus == CheckStatus.error
@@ -101,12 +154,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
             Expanded(
               child: TextFormField(
                 key: Key(fieldKey),
+                enabled: enabled,
                 controller: controller,
                 focusNode: focusNode,
                 style: Theme.of(context).textTheme.bodyMedium,
                 decoration: InputDecoration(
                   hintText: hint,
-                  errorText: checkError,
+                  errorText: serverError ?? checkError,
                   hintStyle: const TextStyle(color: AppColors.outline),
                   filled: true,
                   fillColor: hasError
@@ -166,7 +220,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               MovieLogButton(
                 label: '중복 확인',
                 isLoading: checkStatus == CheckStatus.checking,
-                onPressed: error == null ? onCheck : null,
+                onPressed: enabled && error == null ? onCheck : null,
               ),
             ],
           ],
@@ -178,6 +232,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+
+    // 3. 요청하는 동안에는 화면이 ViewModel의 상태를 받아서 바꿈
+    // VM이 가입 요청을 시작하고 notifyListeners()를 호출하면 화면이 다시 그려지면서 vm.isSubmitting을 읽음
     final vm = context.watch<SignUpViewModel?>();
     return PopScope(
       canPop: false,
@@ -219,6 +276,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             label: '닉네임',
                             hint: '닉네임을 입력해주세요',
                             fieldKey: 'nicknameField',
+                            enabled: vm?.isSubmitting != true,
                             checkStatus: vm?.nicknameCheckStatus,
                             onChanged: vm?.onNicknameChanged,
                             onCheck: vm == null
@@ -228,14 +286,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   ),
                             controller: _nicknameController,
                             focusNode: _nicknameFocusNode,
-                            validator: (value) {
-                              final nickname = value?.trim() ?? '';
-                              if (nickname.isEmpty) return '닉네임을 입력해 주세요.';
-                              if (nickname.length < 2) {
-                                return '닉네임은 2자 이상이어야 합니다.';
-                              }
-                              return null;
-                            },
+                            validator: _validateNickname,
                             onSubmitted: () => _emailFocusNode.requestFocus(),
                           ),
                           const SizedBox(height: 16),
@@ -243,6 +294,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             label: '이메일',
                             hint: '이메일 주소를 입력해주세요',
                             fieldKey: 'emailField',
+                            enabled: vm?.isSubmitting != true,
                             checkStatus: vm?.emailStatus,
                             onChanged: vm?.onEmailChanged,
                             onCheck: vm == null
@@ -260,20 +312,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             label: '비밀번호',
                             hint: '비밀번호를 입력해주세요',
                             fieldKey: 'passwordField',
+                            enabled: vm?.isSubmitting != true,
                             controller: _passwordController,
                             focusNode: _passwordFocusNode,
                             isPassword: true,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return '비밀번호를 입력해 주세요.';
-                              }
-                              if (value.length < 8) {
-                                return '비밀번호는 8자 이상이어야 합니다.';
-                              }
-                              return null;
-                            },
+                            validator: _validatePassword,
+                            serverError: vm?.passwordErrorText,
+                            onChanged: (_) => vm?.onPasswordChanged(),
                             onSubmitted: () {
-                              if (_canSubmit) {
+                              if (_canSubmit(vm)) {
                                 _submit();
                               } else {
                                 _passwordFocusNode.unfocus();
@@ -297,7 +344,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               key: const Key('registerButton'),
                               label: '가입하기',
                               width: double.infinity,
-                              onPressed: _canSubmit ? _submit : null,
+                              isLoading: vm?.isSubmitting ?? false,
+                              onPressed: _canSubmit(vm) ? _submit : null,
                             ),
                             const SizedBox(height: 24),
                             Row(
