@@ -43,6 +43,7 @@ class SignUpViewModel extends ChangeNotifier {
 
   // 닉네임을 입력하거나 수정하면 실행됌
   void onNicknameChanged(String value) {
+    passwordErrorText = null;
     snackbarMessage = null;
     final trimmed = value.trim();
     _currentNickname = trimmed;
@@ -104,6 +105,7 @@ class SignUpViewModel extends ChangeNotifier {
 
   // 이메일을 입력하거나 수정하면 실행됌
   void onEmailChanged(String value) {
+    passwordErrorText = null;
     snackbarMessage = null;
     final trimmed = value.trim();
     _currentEmail = trimmed;

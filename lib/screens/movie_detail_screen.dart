@@ -45,6 +45,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
         initialRating: _myRating?.toDouble() ?? 0,
         // 입력창에 vm.createRating을 넘겨서 확인 버튼을 눌렀을 때 저장을 요청함
         onSubmit: vm.createRating,
+        showErrorSnackBar: true,
       ),
     );
     if (!mounted || rating == null) return;
