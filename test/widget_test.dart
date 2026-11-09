@@ -1,3 +1,5 @@
+import 'package:movielog/data/models/rating_request.dart';
+import 'package:movielog/data/services/rating_api_service.dart';
 import 'package:movielog/data/models/common_response.dart';
 import 'package:movielog/data/models/create_member_request.dart';
 import 'package:movielog/data/models/sign_up_models.dart';
@@ -208,7 +210,7 @@ void main() {
 
     await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
-    expect(find.text('4.5'), findsOneWidget);
+    expect(find.text('4.5 / 5'), findsOneWidget);
 
     await tester.tap(find.byTooltip('즐겨찾기 추가'));
     await tester.pump();
@@ -219,7 +221,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('영화 상세에서 평점 Dialog를 표시한다', (tester) async {
+  testWidgets('Mock 영화 상세에서는 서버 평점 등록을 안내한다', (tester) async {
     await tester.pumpWidget(_testApp());
     AppRouter.router.go('/movies/1');
     await tester.pumpAndSettle();
@@ -232,23 +234,26 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(ratingButton);
     await tester.pumpAndSettle();
-    expect(find.text('영화는 어떠셨나요?'), findsOneWidget);
-    expect(find.byType(MovieRatingInput), findsOneWidget);
-
-    final saveButton = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, '확인'),
-    );
-    expect(saveButton.onPressed, isNull);
-
-    await tester.tapAt(const Offset(8, 8));
-    await tester.pumpAndSettle();
+    expect(find.text('TMDB 영화에서 평점을 남길 수 있어요.'), findsOneWidget);
+    expect(find.byType(RatingDialog), findsNothing);
     AppRouter.router.go('/start');
     await tester.pumpAndSettle();
   });
 
   for (final location in ['/home', '/movies']) {
     testWidgets('$location 실제 영화 ID가 상세와 평점까지 전달된다', (tester) async {
-      await tester.pumpWidget(_testApp());
+      final service = _TestRatingService();
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<RatingApiService>.value(value: service),
+            ChangeNotifierProvider(
+              create: (_) => LearningMemberSession()..setMemberId(42),
+            ),
+          ],
+          child: _testApp(),
+        ),
+      );
       AppRouter.router.go(location);
       await tester.pumpAndSettle();
       if (location == '/home') {
@@ -273,7 +278,7 @@ void main() {
       expect(find.byType(MoviePoster), findsOneWidget);
       await tester.drag(find.byType(ListView), const Offset(0, -650));
       await tester.pumpAndSettle();
-      expect(find.text('8.4 / 10'), findsOneWidget);
+      expect(find.text('4.2 / 5'), findsOneWidget);
       expect(
         tester
             .widget<RatingBarIndicator>(find.byType(RatingBarIndicator))
@@ -287,6 +292,19 @@ void main() {
         tester.widget<RatingDialog>(find.byType(RatingDialog)).movieId,
         movie.id,
       );
+      expect(
+        tester
+            .widget<ElevatedButton>(find.widgetWithText(ElevatedButton, '확인'))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<MovieRatingInput>(find.byType(MovieRatingInput))
+            .allowHalfRating,
+        isFalse,
+      );
+      await tester.enterText(find.byType(TextField), '좋았어요');
       tester
           .widget<MovieRatingInput>(find.byType(MovieRatingInput))
           .onChanged(4.0);
@@ -295,7 +313,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.drag(find.byType(ListView), const Offset(0, -600));
       await tester.pumpAndSettle();
-      expect(find.text('내 평점 4.0점'), findsOneWidget);
+      expect(find.text('내 평점 4 / 5'), findsOneWidget);
+      expect(service.memberId, 42);
+      expect(service.request?.toJson(), {
+        'movieId': movie.id,
+        'score': 4,
+        'comment': '좋았어요',
+      });
       AppRouter.router.go('/start');
       await tester.pumpAndSettle();
     });
@@ -408,5 +432,21 @@ class _TestSignUpService extends SignUpService {
         nickname: request.nickname,
       ),
     );
+  }
+}
+
+class _TestRatingService extends RatingApiService {
+  _TestRatingService() : super(Dio());
+
+  int? memberId;
+  CreateRatingRequest? request;
+
+  @override
+  Future<void> createRating({
+    required int memberId,
+    required CreateRatingRequest request,
+  }) async {
+    this.memberId = memberId;
+    this.request = request;
   }
 }

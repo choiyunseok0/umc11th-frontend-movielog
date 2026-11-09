@@ -46,7 +46,7 @@ class MovieCard extends StatelessWidget {
 
    // 8. movie_card.dart, movie_poster.dart — 카드 완성
     final title = tmdbMovie?.title ?? movie!.title;
-    final rating = tmdbMovie?.voteAverage ?? movie!.averageRating;
+    final rating = tmdbMovie?.ratingOutOfFive ?? movie!.averageRating;
     final metadata = tmdbMovie != null
         ? tmdbMovie!.releaseDate
         : '${movie!.year} · ${movie!.genre}';

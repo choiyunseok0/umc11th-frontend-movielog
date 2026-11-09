@@ -1,3 +1,4 @@
+import '../view_models/movie_detail_view_model.dart';
 import '../view_models/learning_member_session.dart';
 import '../data/services/rating_api_service.dart';
 import '../screens/my_ratings_screen.dart';
@@ -141,7 +142,17 @@ abstract final class AppRouter {
               body: Center(child: Text('영화 정보를 찾을 수 없습니다.')),
             );
           }
-          return MovieDetailScreen(movieId: movieId, tmdbMovie: movie);
+          final screen = MovieDetailScreen(movieId: movieId, tmdbMovie: movie);
+          final memberId = context.watch<LearningMemberSession?>()?.memberId;
+          final service = context.read<RatingApiService?>();
+          if (movie == null || memberId == null || service == null) {
+            return screen;
+          }
+          return ChangeNotifierProvider(
+            key: ValueKey((memberId, movie.id)),
+            create: (_) => MovieDetailViewModel(service, memberId, movie.id),
+            child: screen,
+          );
         },
       ),
     ],
