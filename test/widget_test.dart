@@ -325,6 +325,85 @@ void main() {
     });
   }
 
+  testWidgets('평점 수정 뒤 조회가 실패하면 GET만 다시 시도한다', (tester) async {
+    final dio = Dio();
+    final requests = <String>[];
+    Object? patchBody;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add('${options.method} ${options.path}');
+          if (options.method == 'PATCH') {
+            patchBody = options.data;
+            handler.resolve(Response(requestOptions: options, statusCode: 200));
+          } else if (requests.length == 3) {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionError,
+              ),
+            );
+          } else {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: [
+                  {
+                    'ratingId': 12,
+                    'movieId': 550,
+                    'score': 4,
+                    'comment': requests.length == 1 ? '기존 코멘트' : null,
+                    'createdAt': '2026-11-08T00:00:00Z',
+                  },
+                ],
+              ),
+            );
+          }
+        },
+      ),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<RatingApiService>.value(value: RatingApiService(dio)),
+          ChangeNotifierProvider(
+            create: (_) => LearningMemberSession()..setMemberId(42),
+          ),
+        ],
+        child: _testApp(),
+      ),
+    );
+    AppRouter.router.go('/my/ratings');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('평점 수정'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<RatingDialog>(find.byType(RatingDialog)).initialRating,
+      4,
+    );
+    expect(find.text('기존 코멘트'), findsWidgets);
+    await tester.enterText(find.byType(TextField), '');
+    await tester.tap(find.widgetWithText(ElevatedButton, '확인'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RatingDialog), findsNothing);
+    expect(find.textContaining('평점은 저장됐지만'), findsOneWidget);
+    expect(patchBody, {'score': 4, 'comment': null});
+    await tester.tap(find.text('다시 시도'));
+    await tester.pumpAndSettle();
+    expect(find.text('별점 4 / 5'), findsOneWidget);
+    expect(requests, [
+      'GET /v6/members/42/ratings',
+      'PATCH /v6/members/42/ratings/12',
+      'GET /v6/members/42/ratings',
+      'GET /v6/members/42/ratings',
+    ]);
+    AppRouter.router.go('/start');
+    await tester.pumpAndSettle();
+    dio.close();
+  });
+
   testWidgets('Figma 기준 프로필 정보가 표시된다', (tester) async {
     await tester.pumpWidget(
       MaterialApp(theme: AppTheme.light, home: const ProfileScreen()),

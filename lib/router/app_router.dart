@@ -115,13 +115,18 @@ abstract final class AppRouter {
       ),
       GoRoute(
         path: '$myPagePath/ratings',
-        builder: (context, state) => ChangeNotifierProvider(
-          create: (context) => MyRatingsViewModel(
-            context.read<RatingApiService>(),
-            context.read<TmdbMovieService>(),
-          )..load(),
-          child: const MyRatingsScreen(),
-        ),
+        builder: (context, state) {
+          final memberId = context.watch<LearningMemberSession?>()?.memberId;
+          return ChangeNotifierProvider(
+            key: ValueKey(memberId),
+            create: (context) => MyRatingsViewModel(
+              context.read<RatingApiService>(),
+              context.read<TmdbMovieService>(),
+              memberId,
+            )..load(),
+            child: const MyRatingsScreen(),
+          );
+        },
       ),
       GoRoute(
         path: '$moviesPath/:movieId',

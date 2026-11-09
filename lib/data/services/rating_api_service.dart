@@ -29,19 +29,42 @@ class RatingApiService {
     }
   }
 
+  Future<void> updateRating({
+    required int memberId,
+    required int ratingId,
+    required int score,
+    String? comment,
+  }) async {
+    if (score < 1 || score > 5) {
+      throw ArgumentError('별점은 1~5 사이 정수여야 합니다.');
+    }
+
+    // 4.1 기존 평점 수정 요청
+    final response = await _dio.patch(
+      '/v6/members/$memberId/ratings/$ratingId',
+      data: {'score': score, 'comment': comment},
+    );
+    // 원래 PATCH 응답에 수정된 값이 들어 있으면 GET을 다시 호출할 필요 없음
+    // 다만 지금 코드에서는 200인지 아닌지 확인만 하고있긴함
+    // 그래서 서버에 저장된 최신 평점 목록을 다시 확인하려면 GET을 호출해야함
+    if (response.statusCode != 200) {
+      throw StateError('예상하지 못한 평점 수정 응답입니다.');
+    }
+  }
+
   Future<List<RatingDto>> fetchMyRatings(int memberId) async {
     if (StudyCapture.enabled) {
       await StudyCapture.pause();
       if (StudyCapture.ratings == 'empty') return [];
       if (StudyCapture.ratings == 'error') {
         throw DioException(
-          requestOptions: RequestOptions(path: '/v5/members/$memberId/ratings'),
+          requestOptions: RequestOptions(path: '/v6/members/$memberId/ratings'),
           type: DioExceptionType.connectionError,
         );
       }
     }
     final response = await _dio.get<List<dynamic>>(
-      '/v5/members/$memberId/ratings',
+      '/v6/members/$memberId/ratings',
     );
     return response.data!
         .map((item) => RatingDto.fromJson(item as Map<String, dynamic>))

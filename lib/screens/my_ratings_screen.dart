@@ -4,9 +4,38 @@ import 'package:provider/provider.dart';
 import '../data/models/rating_with_movie.dart';
 import '../view_models/my_ratings_view_model.dart';
 import '../theme/app_colors.dart';
+import '../widgets/rating_dialog.dart';
 
 class MyRatingsScreen extends StatelessWidget {
   const MyRatingsScreen({super.key});
+
+  Future<void> _editRating(BuildContext context, RatingWithMovie entry) async {
+    final vm = context.read<MyRatingsViewModel>();
+    final rating = entry.rating;
+    final saved = await showDialog<int>(
+      context: context,
+      barrierDismissible: false,
+
+      // 7.4.4.1 수정 팝업에 기존 별점과 코멘트를 채움
+      // 팝업을 열면 기존 별점과 코멘트가 미리 드렁있음
+      // 확인을 누르면 수정할 평점의 번호 ratingId와 새 값을 ViewModel에 넘김
+      builder: (_) => RatingDialog(
+        movieId: rating.movieId,
+        initialRating: rating.score.toDouble(),
+        initialComment: rating.comment,
+        onSubmit: (score, comment) =>
+            vm.updateRating(rating.ratingId, score, comment),
+      ),
+    );
+
+    // 7.4.4.2 저장에 성공하면 목록을 다시 조회함
+    // 팝업을 취소하면 saved가 null이라 끝나고
+    // 저장에 성공하면 '평점을 수정했어요'라는 알림이 뜸 + vm.load()로 최신 평점 목록을 불러옴
+    if (!context.mounted || saved == null) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('평점을 수정했어요.')));
+    await vm.load();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +66,8 @@ class MyRatingsScreen extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(vm.message ?? '', textAlign: TextAlign.center),
-                  TextButton(onPressed: vm.load, child: const Text('다시 시도')),
+                  if (vm.memberId != null)
+                    TextButton(onPressed: vm.load, child: const Text('다시 시도')),
                 ],
               ),
             ),
@@ -46,8 +76,13 @@ class MyRatingsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
             separatorBuilder: (_, _) => const SizedBox(height: 16),
             itemCount: vm.ratings.length,
-            itemBuilder: (context, index) =>
-                _RatingCard(entry: vm.ratings[index]),
+            itemBuilder: (context, index) {
+              final entry = vm.ratings[index];
+              return _RatingCard(
+                entry: entry,
+                onEdit: () => _editRating(context, entry),
+              );
+            },
           ),
         },
       ),
@@ -56,9 +91,10 @@ class MyRatingsScreen extends StatelessWidget {
 }
 
 class _RatingCard extends StatelessWidget {
-  const _RatingCard({required this.entry});
+  const _RatingCard({required this.entry, required this.onEdit});
 
   final RatingWithMovie entry;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +164,11 @@ class _RatingCard extends StatelessWidget {
                   ],
                 ],
               ),
+            ),
+            IconButton(
+              tooltip: '평점 수정',
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined),
             ),
           ],
         ),
