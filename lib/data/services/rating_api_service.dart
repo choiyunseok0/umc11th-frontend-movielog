@@ -39,7 +39,7 @@ class RatingApiService {
       throw ArgumentError('별점은 1~5 사이 정수여야 합니다.');
     }
 
-    // 4.1 기존 평점 수정 요청
+    // 7.4.1 기존 평점 수정 요청
     final response = await _dio.patch(
       '/v6/members/$memberId/ratings/$ratingId',
       data: {'score': score, 'comment': comment},
@@ -49,6 +49,24 @@ class RatingApiService {
     // 그래서 서버에 저장된 최신 평점 목록을 다시 확인하려면 GET을 호출해야함
     if (response.statusCode != 200) {
       throw StateError('예상하지 못한 평점 수정 응답입니다.');
+    }
+  }
+
+  // 7.5.1.1 삭제할 평점 번호를 받음
+  // memberId & ratingId 두 값으로 삭제할 평점을 지정함
+  Future<void> deleteRating({
+    required int memberId,
+    required int ratingId,
+  }) async {
+    // 7.5.1.2 서버에 DELETE 요청을 보냄 (삭제 대상은 주소에 들어가므로 요청 본문은 따로 보내지 않아도 ㄱㅊ음)
+    final response = await _dio.delete<void>(
+      '/v6/members/$memberId/ratings/$ratingId',
+    );
+
+    // 7.5.1.3 응답이 204인지 확인함
+    // '204 No Content'는 요청이 성공했고 응답 본문이 비어있단 뜻 
+    if (response.statusCode != 204) {
+      throw StateError('예상하지 못한 평점 삭제 응답입니다.');
     }
   }
 

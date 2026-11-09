@@ -404,6 +404,76 @@ void main() {
     dio.close();
   });
 
+  testWidgets('삭제 취소는 요청하지 않고 마지막 평점 삭제 후 빈 목록을 표시한다', (tester) async {
+    final dio = Dio();
+    final requests = <String>[];
+    var deleted = false;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add('${options.method} ${options.path}');
+          if (options.method == 'DELETE') {
+            deleted = true;
+            handler.resolve(
+              Response<void>(requestOptions: options, statusCode: 204),
+            );
+            return;
+          }
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: deleted
+                  ? []
+                  : [
+                      {
+                        'ratingId': 12,
+                        'movieId': 550,
+                        'score': 4,
+                        'comment': null,
+                        'createdAt': '2026-11-08T00:00:00Z',
+                      },
+                    ],
+            ),
+          );
+        },
+      ),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<RatingApiService>.value(value: RatingApiService(dio)),
+          ChangeNotifierProvider(
+            create: (_) => LearningMemberSession()..setMemberId(42),
+          ),
+        ],
+        child: _testApp(),
+      ),
+    );
+    AppRouter.router.go('/my/ratings');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('평점 삭제'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('취소'));
+    await tester.pumpAndSettle();
+    expect(requests, ['GET /v6/members/42/ratings']);
+    expect(find.text('별점 4 / 5'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('평점 삭제'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '삭제'));
+    await tester.pumpAndSettle();
+    expect(find.text('등록한 평점이 없어요.'), findsOneWidget);
+    expect(requests, [
+      'GET /v6/members/42/ratings',
+      'DELETE /v6/members/42/ratings/12',
+      'GET /v6/members/42/ratings',
+    ]);
+    AppRouter.router.go('/start');
+    await tester.pumpAndSettle();
+    dio.close();
+  });
+
   testWidgets('Figma 기준 프로필 정보가 표시된다', (tester) async {
     await tester.pumpWidget(
       MaterialApp(theme: AppTheme.light, home: const ProfileScreen()),

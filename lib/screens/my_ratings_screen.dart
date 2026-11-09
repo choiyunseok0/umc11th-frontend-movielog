@@ -37,6 +37,70 @@ class MyRatingsScreen extends StatelessWidget {
     await vm.load();
   }
 
+  Future<void> _deleteRating(
+    BuildContext context,
+    RatingWithMovie entry,
+  ) async {
+    final vm = context.read<MyRatingsViewModel>();
+    var deleting = false;
+    String? error;
+    final deleted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => PopScope(
+          canPop: !deleting,
+          child: AlertDialog(
+            title: const Text('평점을 삭제할까요?'),
+            content: Text(error ?? '삭제한 평점은 되돌릴 수 없어요.'),
+            actions: [
+              TextButton(
+                onPressed: deleting
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(false),
+                child: const Text('취소'),
+              ),
+              TextButton(
+                onPressed: deleting
+                    ? null
+                    : () async {
+                        if (deleting) return;
+                        setDialogState(() {
+                          deleting = true;
+                          error = null;
+                        });
+
+                        // 7.5.3.2 팝업에서 삭제를 누르면 ViewModel에 요청함
+                       // 삭제할 평점의 ID를 넘기고 요청 중엔 버튼 비활성화 + '삭제 중...' 을 표시
+                       final result = await vm.deleteRating(
+                          entry.rating.ratingId,
+                        );
+                        if (!dialogContext.mounted) return;
+                        if (result == null) {
+                          Navigator.of(dialogContext).pop(true);
+                          return;
+                        }
+                        setDialogState(() {
+                          deleting = false;
+                          error = result;
+                        });
+                      },
+                child: Text(deleting ? '삭제 중…' : '삭제'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 7.5.3.3 삭제에 성공하면 목록을 다시 불러옴
+    // vm.load()로 최신 목록을 불러옴
+    if (!context.mounted || deleted != true) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('평점을 삭제했어요.')));
+    await vm.load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<MyRatingsViewModel>();
@@ -81,6 +145,9 @@ class MyRatingsScreen extends StatelessWidget {
               return _RatingCard(
                 entry: entry,
                 onEdit: () => _editRating(context, entry),
+
+                // 7.5.3.1 휴지통 버튼을 누르면 해당 카드의 삭제 팝업을 열음
+                onDelete: () => _deleteRating(context, entry),
               );
             },
           ),
@@ -91,10 +158,15 @@ class MyRatingsScreen extends StatelessWidget {
 }
 
 class _RatingCard extends StatelessWidget {
-  const _RatingCard({required this.entry, required this.onEdit});
+  const _RatingCard({
+    required this.entry,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final RatingWithMovie entry;
   final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -165,10 +237,20 @@ class _RatingCard extends StatelessWidget {
                 ],
               ),
             ),
-            IconButton(
-              tooltip: '평점 수정',
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: '평점 수정',
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                IconButton(
+                  tooltip: '평점 삭제',
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
             ),
           ],
         ),
