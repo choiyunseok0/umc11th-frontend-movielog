@@ -42,6 +42,10 @@ class MyRatingsScreen extends StatelessWidget {
     RatingWithMovie entry,
   ) async {
     final vm = context.read<MyRatingsViewModel>();
+    final buttonStyle = TextButton.styleFrom(
+      minimumSize: const Size(0, 44),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
     var deleting = false;
     String? error;
     final deleted = await showDialog<bool>(
@@ -51,41 +55,83 @@ class MyRatingsScreen extends StatelessWidget {
         builder: (dialogContext, setDialogState) => PopScope(
           canPop: !deleting,
           child: AlertDialog(
-            title: const Text('평점을 삭제할까요?'),
-            content: Text(error ?? '삭제한 평점은 되돌릴 수 없어요.'),
-            actions: [
-              TextButton(
-                onPressed: deleting
-                    ? null
-                    : () => Navigator.of(dialogContext).pop(false),
-                child: const Text('취소'),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(20, 36, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+            actionsPadding: const EdgeInsets.fromLTRB(18, 46, 18, 34),
+            title: const Text(
+              '평점을 삭제할까요?',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            content: Text(
+              error ?? '삭제한 평점은 복구할 수 없습니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: error == null ? AppColors.outline : AppColors.error,
               ),
-              TextButton(
-                onPressed: deleting
-                    ? null
-                    : () async {
-                        if (deleting) return;
-                        setDialogState(() {
-                          deleting = true;
-                          error = null;
-                        });
+            ),
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      style: buttonStyle.copyWith(
+                        backgroundColor: const WidgetStatePropertyAll(
+                          Color(0xFFEFE9F8),
+                        ),
+                        foregroundColor: const WidgetStatePropertyAll(
+                          AppColors.primary,
+                        ),
+                      ),
+                      onPressed: deleting
+                          ? null
+                          : () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('취소'),
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: TextButton(
+                      style: buttonStyle.merge(
+                        TextButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          disabledBackgroundColor: AppColors.disabledPrimary,
+                        ),
+                      ),
+                      onPressed: deleting
+                          ? null
+                          : () async {
+                              if (deleting) return;
+                              setDialogState(() {
+                                deleting = true;
+                                error = null;
+                              });
 
-                        // 7.5.3.2 팝업에서 삭제를 누르면 ViewModel에 요청함
-                       // 삭제할 평점의 ID를 넘기고 요청 중엔 버튼 비활성화 + '삭제 중...' 을 표시
-                       final result = await vm.deleteRating(
-                          entry.rating.ratingId,
-                        );
-                        if (!dialogContext.mounted) return;
-                        if (result == null) {
-                          Navigator.of(dialogContext).pop(true);
-                          return;
-                        }
-                        setDialogState(() {
-                          deleting = false;
-                          error = result;
-                        });
-                      },
-                child: Text(deleting ? '삭제 중…' : '삭제'),
+                              // 7.5.3.2 팝업에서 삭제를 누르면 ViewModel에 요청함
+                              // 삭제할 평점의 ID를 넘기고 요청 중엔 버튼 비활성화 + '삭제 중...' 을 표시
+                              final result = await vm.deleteRating(
+                                entry.rating.ratingId,
+                              );
+                              if (!dialogContext.mounted) return;
+                              if (result == null) {
+                                Navigator.of(dialogContext).pop(true);
+                                return;
+                              }
+                              setDialogState(() {
+                                deleting = false;
+                                error = result;
+                              });
+                            },
+                      child: Text(deleting ? '삭제 중…' : '삭제'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -240,15 +286,38 @@ class _RatingCard extends StatelessWidget {
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  tooltip: '평점 수정',
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit_outlined),
+                Tooltip(
+                  message: '평점 수정',
+                  child: FilledButton(
+                    onPressed: onEdit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFEFE9F8),
+                      foregroundColor: AppColors.primary,
+                      minimumSize: const Size(60, 34),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('수정'),
+                  ),
                 ),
-                IconButton(
-                  tooltip: '평점 삭제',
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline),
+                const SizedBox(height: 4),
+                Tooltip(
+                  message: '평점 삭제',
+                  child: FilledButton(
+                    onPressed: onDelete,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFF1ED),
+                      foregroundColor: AppColors.error,
+                      minimumSize: const Size(60, 34),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('삭제'),
+                  ),
                 ),
               ],
             ),
