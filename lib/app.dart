@@ -1,3 +1,5 @@
+import 'view_models/learning_member_session.dart';
+
 // 만든 객체를 연결하기
 // 여러 화면이 사용할 Client & Service를 앱 사우이에서 제공하기 위함
 import 'package:flutter/material.dart';
@@ -5,7 +7,7 @@ import 'package:provider/provider.dart';
 
 import 'core/network/tmdb_client.dart';
 import 'core/network/movie_log_client.dart';
-import 'data/services/member_check_service.dart';
+import 'data/services/sign_up_service.dart';
 import 'data/services/rating_api_service.dart';
 import 'data/services/tmdb_movie_service.dart';
 
@@ -22,12 +24,13 @@ class MovieLogApp extends StatelessWidget {
     // 여러 화면에서 같은 Service를 사용할 수 잇도록 앱 사우이에 Provider로 제공
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => LearningMemberSession()),
         Provider<TmdbMovieService>(
           create: (_) => TmdbMovieService(createTmdbClient()),
         ),
         Provider(create: (_) => createMovieLogClient()),
-        Provider<MemberCheckService>(
-          create: (context) => MemberCheckService(context.read()),
+        Provider<SignUpService>(
+          create: (context) => SignUpService(context.read()),
         ),
         Provider<RatingApiService>(
           create: (context) => RatingApiService(context.read()),

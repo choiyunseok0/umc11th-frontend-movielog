@@ -42,7 +42,7 @@ void main() {
     expect(find.byIcon(Icons.check_circle), findsOneWidget);
   });
 
-  testWidgets('모든 입력과 약관이 유효할 때만 가입할 수 있다', (tester) async {
+  testWidgets('입력과 약관이 유효해도 중복 확인 없이 가입할 수 없다', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: RegisterScreen()));
     final button = find.byKey(const Key('registerButton'));
     bool canSubmit() => tester.widget<MovieLogButton>(button).onPressed != null;
@@ -55,7 +55,7 @@ void main() {
     );
     await tester.enterText(
       find.byKey(const Key('passwordField')),
-      'password123',
+      'Password123!',
     );
     await tester.pump();
     expect(canSubmit(), isFalse);
@@ -64,12 +64,7 @@ void main() {
     await tester.ensureVisible(terms);
     await tester.tap(terms);
     await tester.pump();
-    expect(canSubmit(), isTrue);
-
-    await tester.ensureVisible(button);
-    await tester.tap(button);
-    await tester.pump();
-    expect(find.byType(SnackBar), findsNothing);
+    expect(canSubmit(), isFalse);
 
     await tester.enterText(find.byKey(const Key('emailField')), 'bad@domain.');
     await tester.pump();

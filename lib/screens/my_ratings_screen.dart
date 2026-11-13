@@ -4,9 +4,148 @@ import 'package:provider/provider.dart';
 import '../data/models/rating_with_movie.dart';
 import '../view_models/my_ratings_view_model.dart';
 import '../theme/app_colors.dart';
+import '../widgets/rating_dialog.dart';
 
 class MyRatingsScreen extends StatelessWidget {
   const MyRatingsScreen({super.key});
+
+  Future<void> _editRating(BuildContext context, RatingWithMovie entry) async {
+    final vm = context.read<MyRatingsViewModel>();
+    final rating = entry.rating;
+    final saved = await showDialog<int>(
+      context: context,
+      barrierDismissible: false,
+
+      // 7.4.4.1 수정 팝업에 기존 별점과 코멘트를 채움
+      // 팝업을 열면 기존 별점과 코멘트가 미리 드렁있음
+      // 확인을 누르면 수정할 평점의 번호 ratingId와 새 값을 ViewModel에 넘김
+      builder: (_) => RatingDialog(
+        movieId: rating.movieId,
+        initialRating: rating.score.toDouble(),
+        initialComment: rating.comment,
+        onSubmit: (score, comment) =>
+            vm.updateRating(rating.ratingId, score, comment),
+      ),
+    );
+
+    // 7.4.4.2 저장에 성공하면 목록을 다시 조회함
+    // 팝업을 취소하면 saved가 null이라 끝나고
+    // 저장에 성공하면 '평점을 수정했어요'라는 알림이 뜸 + vm.load()로 최신 평점 목록을 불러옴
+    if (!context.mounted || saved == null) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('평점을 수정했어요.')));
+    await vm.load();
+  }
+
+  Future<void> _deleteRating(
+    BuildContext context,
+    RatingWithMovie entry,
+  ) async {
+    final vm = context.read<MyRatingsViewModel>();
+    final buttonStyle = TextButton.styleFrom(
+      minimumSize: const Size(0, 44),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
+    var deleting = false;
+    String? error;
+    final deleted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => PopScope(
+          canPop: !deleting,
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(20, 36, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+            actionsPadding: const EdgeInsets.fromLTRB(18, 46, 18, 34),
+            title: const Text(
+              '평점을 삭제할까요?',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            content: Text(
+              error ?? '삭제한 평점은 복구할 수 없습니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: error == null ? AppColors.outline : AppColors.error,
+              ),
+            ),
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      style: buttonStyle.copyWith(
+                        backgroundColor: const WidgetStatePropertyAll(
+                          Color(0xFFEFE9F8),
+                        ),
+                        foregroundColor: const WidgetStatePropertyAll(
+                          AppColors.primary,
+                        ),
+                      ),
+                      onPressed: deleting
+                          ? null
+                          : () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('취소'),
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: TextButton(
+                      style: buttonStyle.merge(
+                        TextButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          disabledBackgroundColor: AppColors.disabledPrimary,
+                        ),
+                      ),
+                      onPressed: deleting
+                          ? null
+                          : () async {
+                              if (deleting) return;
+                              setDialogState(() {
+                                deleting = true;
+                                error = null;
+                              });
+
+                              // 7.5.3.2 팝업에서 삭제를 누르면 ViewModel에 요청함
+                              // 삭제할 평점의 ID를 넘기고 요청 중엔 버튼 비활성화 + '삭제 중...' 을 표시
+                              final result = await vm.deleteRating(
+                                entry.rating.ratingId,
+                              );
+                              if (!dialogContext.mounted) return;
+                              if (result == null) {
+                                Navigator.of(dialogContext).pop(true);
+                                return;
+                              }
+                              setDialogState(() {
+                                deleting = false;
+                                error = result;
+                              });
+                            },
+                      child: Text(deleting ? '삭제 중…' : '삭제'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 7.5.3.3 삭제에 성공하면 목록을 다시 불러옴
+    // vm.load()로 최신 목록을 불러옴
+    if (!context.mounted || deleted != true) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('평점을 삭제했어요.')));
+    await vm.load();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +176,8 @@ class MyRatingsScreen extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(vm.message ?? '', textAlign: TextAlign.center),
-                  TextButton(onPressed: vm.load, child: const Text('다시 시도')),
+                  if (vm.memberId != null)
+                    TextButton(onPressed: vm.load, child: const Text('다시 시도')),
                 ],
               ),
             ),
@@ -46,8 +186,16 @@ class MyRatingsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
             separatorBuilder: (_, _) => const SizedBox(height: 16),
             itemCount: vm.ratings.length,
-            itemBuilder: (context, index) =>
-                _RatingCard(entry: vm.ratings[index]),
+            itemBuilder: (context, index) {
+              final entry = vm.ratings[index];
+              return _RatingCard(
+                entry: entry,
+                onEdit: () => _editRating(context, entry),
+
+                // 7.5.3.1 휴지통 버튼을 누르면 해당 카드의 삭제 팝업을 열음
+                onDelete: () => _deleteRating(context, entry),
+              );
+            },
           ),
         },
       ),
@@ -56,9 +204,15 @@ class MyRatingsScreen extends StatelessWidget {
 }
 
 class _RatingCard extends StatelessWidget {
-  const _RatingCard({required this.entry});
+  const _RatingCard({
+    required this.entry,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final RatingWithMovie entry;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +282,44 @@ class _RatingCard extends StatelessWidget {
                   ],
                 ],
               ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Tooltip(
+                  message: '평점 수정',
+                  child: FilledButton(
+                    onPressed: onEdit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFEFE9F8),
+                      foregroundColor: AppColors.primary,
+                      minimumSize: const Size(60, 34),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('수정'),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Tooltip(
+                  message: '평점 삭제',
+                  child: FilledButton(
+                    onPressed: onDelete,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFF1ED),
+                      foregroundColor: AppColors.error,
+                      minimumSize: const Size(60, 34),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('삭제'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

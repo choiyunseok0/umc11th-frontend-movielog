@@ -1,3 +1,10 @@
+import 'package:movielog/data/models/rating_request.dart';
+import 'package:movielog/data/services/rating_api_service.dart';
+import 'package:movielog/data/models/common_response.dart';
+import 'package:movielog/data/models/create_member_request.dart';
+import 'package:movielog/data/models/sign_up_models.dart';
+import 'package:movielog/data/services/sign_up_service.dart';
+import 'package:movielog/view_models/learning_member_session.dart';
 import 'package:flutter/material.dart';
 import 'package:movielog/widgets/movielog_button.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -40,8 +47,18 @@ void main() {
     expect(find.text('환영합니다!\n간단한 정보만 입력하고 시작해보세요.'), findsOneWidget);
   });
 
-  testWidgets('입력과 약관 검증이 완료되면 홈으로 이동하고 뒤로 가지 않는다', (tester) async {
-    await tester.pumpWidget(_testApp());
+  testWidgets('중복 확인 후 가입 실패 시 입력을 유지하고 성공 시 영화 목록으로 이동한다', (tester) async {
+    final session = LearningMemberSession();
+    final service = _TestSignUpService();
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<SignUpService>.value(value: service),
+          ChangeNotifierProvider.value(value: session),
+        ],
+        child: _testApp(),
+      ),
+    );
     AppRouter.router.go('/register');
     await tester.pumpAndSettle();
     final button = find.byKey(const Key('registerButton'));
@@ -49,7 +66,7 @@ void main() {
     for (final entry in {
       'nicknameField': '무비러버',
       'emailField': 'movie@example.com',
-      'passwordField': 'password123',
+      'passwordField': 'Password123!',
     }.entries) {
       final field = find.byKey(Key(entry.key));
       await tester.ensureVisible(field);
@@ -61,14 +78,33 @@ void main() {
     await tester.ensureVisible(terms);
     await tester.tap(terms);
     await tester.pump();
+    expect(tester.widget<MovieLogButton>(button).onPressed, isNull);
+    final checks = find.widgetWithText(MovieLogButton, '중복 확인');
+    await tester.ensureVisible(checks.first);
+    await tester.tap(checks.first);
+    await tester.pumpAndSettle();
+    expect(tester.widget<MovieLogButton>(button).onPressed, isNull);
+    await tester.ensureVisible(checks.last);
+    await tester.tap(checks.last);
+    await tester.pumpAndSettle();
+    expect(tester.widget<MovieLogButton>(button).onPressed, isNotNull);
     await tester.ensureVisible(button);
     await tester.tap(button);
     await tester.pumpAndSettle();
-    expect(find.text('오늘은 어떤 영화를 볼까요?'), findsOneWidget);
-    expect(find.byType(NavigationBar), findsOneWidget);
-    await tester.binding.handlePopRoute();
+    expect(find.text('이미 사용 중인 이메일입니다.'), findsOneWidget);
+    expect(session.memberId, isNull);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('passwordField')))
+          .controller!
+          .text,
+      'Password123!',
+    );
+
+    await tester.tap(button);
     await tester.pumpAndSettle();
-    expect(find.text('오늘은 어떤 영화를 볼까요?'), findsOneWidget);
+    expect(session.memberId, 42);
+    expect(AppRouter.router.routeInformationProvider.value.uri.path, '/movies');
     AppRouter.router.go('/start');
     await tester.pumpAndSettle();
   });
@@ -174,7 +210,7 @@ void main() {
 
     await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
-    expect(find.text('4.5'), findsOneWidget);
+    expect(find.text('4.5 / 5'), findsOneWidget);
 
     await tester.tap(find.byTooltip('즐겨찾기 추가'));
     await tester.pump();
@@ -185,7 +221,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('영화 상세에서 평점 Dialog를 표시한다', (tester) async {
+  testWidgets('Mock 영화 상세에서는 서버 평점 등록을 안내한다', (tester) async {
     await tester.pumpWidget(_testApp());
     AppRouter.router.go('/movies/1');
     await tester.pumpAndSettle();
@@ -198,23 +234,26 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(ratingButton);
     await tester.pumpAndSettle();
-    expect(find.text('영화는 어떠셨나요?'), findsOneWidget);
-    expect(find.byType(MovieRatingInput), findsOneWidget);
-
-    final saveButton = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, '확인'),
-    );
-    expect(saveButton.onPressed, isNull);
-
-    await tester.tapAt(const Offset(8, 8));
-    await tester.pumpAndSettle();
+    expect(find.text('TMDB 영화에서 평점을 남길 수 있어요.'), findsOneWidget);
+    expect(find.byType(RatingDialog), findsNothing);
     AppRouter.router.go('/start');
     await tester.pumpAndSettle();
   });
 
   for (final location in ['/home', '/movies']) {
     testWidgets('$location 실제 영화 ID가 상세와 평점까지 전달된다', (tester) async {
-      await tester.pumpWidget(_testApp());
+      final service = _TestRatingService();
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<RatingApiService>.value(value: service),
+            ChangeNotifierProvider(
+              create: (_) => LearningMemberSession()..setMemberId(42),
+            ),
+          ],
+          child: _testApp(),
+        ),
+      );
       AppRouter.router.go(location);
       await tester.pumpAndSettle();
       if (location == '/home') {
@@ -239,7 +278,7 @@ void main() {
       expect(find.byType(MoviePoster), findsOneWidget);
       await tester.drag(find.byType(ListView), const Offset(0, -650));
       await tester.pumpAndSettle();
-      expect(find.text('8.4 / 10'), findsOneWidget);
+      expect(find.text('4.2 / 5'), findsOneWidget);
       expect(
         tester
             .widget<RatingBarIndicator>(find.byType(RatingBarIndicator))
@@ -253,6 +292,19 @@ void main() {
         tester.widget<RatingDialog>(find.byType(RatingDialog)).movieId,
         movie.id,
       );
+      expect(
+        tester
+            .widget<ElevatedButton>(find.widgetWithText(ElevatedButton, '확인'))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<MovieRatingInput>(find.byType(MovieRatingInput))
+            .allowHalfRating,
+        isFalse,
+      );
+      await tester.enterText(find.byType(TextField), '좋았어요');
       tester
           .widget<MovieRatingInput>(find.byType(MovieRatingInput))
           .onChanged(4.0);
@@ -261,11 +313,166 @@ void main() {
       await tester.pumpAndSettle();
       await tester.drag(find.byType(ListView), const Offset(0, -600));
       await tester.pumpAndSettle();
-      expect(find.text('내 평점 4.0점'), findsOneWidget);
+      expect(find.text('내 평점 4 / 5'), findsOneWidget);
+      expect(service.memberId, 42);
+      expect(service.request?.toJson(), {
+        'movieId': movie.id,
+        'score': 4,
+        'comment': '좋았어요',
+      });
       AppRouter.router.go('/start');
       await tester.pumpAndSettle();
     });
   }
+
+  testWidgets('평점 수정 뒤 조회가 실패하면 GET만 다시 시도한다', (tester) async {
+    final dio = Dio();
+    final requests = <String>[];
+    Object? patchBody;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add('${options.method} ${options.path}');
+          if (options.method == 'PATCH') {
+            patchBody = options.data;
+            handler.resolve(Response(requestOptions: options, statusCode: 200));
+          } else if (requests.length == 3) {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionError,
+              ),
+            );
+          } else {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: [
+                  {
+                    'ratingId': 12,
+                    'movieId': 550,
+                    'score': 4,
+                    'comment': requests.length == 1 ? '기존 코멘트' : null,
+                    'createdAt': '2026-11-08T00:00:00Z',
+                  },
+                ],
+              ),
+            );
+          }
+        },
+      ),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<RatingApiService>.value(value: RatingApiService(dio)),
+          ChangeNotifierProvider(
+            create: (_) => LearningMemberSession()..setMemberId(42),
+          ),
+        ],
+        child: _testApp(),
+      ),
+    );
+    AppRouter.router.go('/my/ratings');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('평점 수정'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<RatingDialog>(find.byType(RatingDialog)).initialRating,
+      4,
+    );
+    expect(find.text('기존 코멘트'), findsWidgets);
+    await tester.enterText(find.byType(TextField), '');
+    await tester.tap(find.widgetWithText(ElevatedButton, '확인'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RatingDialog), findsNothing);
+    expect(find.textContaining('평점은 저장됐지만'), findsOneWidget);
+    expect(patchBody, {'score': 4, 'comment': null});
+    await tester.tap(find.text('다시 시도'));
+    await tester.pumpAndSettle();
+    expect(find.text('별점 4 / 5'), findsOneWidget);
+    expect(requests, [
+      'GET /v6/members/42/ratings',
+      'PATCH /v6/members/42/ratings/12',
+      'GET /v6/members/42/ratings',
+      'GET /v6/members/42/ratings',
+    ]);
+    AppRouter.router.go('/start');
+    await tester.pumpAndSettle();
+    dio.close();
+  });
+
+  testWidgets('삭제 취소는 요청하지 않고 마지막 평점 삭제 후 빈 목록을 표시한다', (tester) async {
+    final dio = Dio();
+    final requests = <String>[];
+    var deleted = false;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add('${options.method} ${options.path}');
+          if (options.method == 'DELETE') {
+            deleted = true;
+            handler.resolve(
+              Response<void>(requestOptions: options, statusCode: 204),
+            );
+            return;
+          }
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: deleted
+                  ? []
+                  : [
+                      {
+                        'ratingId': 12,
+                        'movieId': 550,
+                        'score': 4,
+                        'comment': null,
+                        'createdAt': '2026-11-08T00:00:00Z',
+                      },
+                    ],
+            ),
+          );
+        },
+      ),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<RatingApiService>.value(value: RatingApiService(dio)),
+          ChangeNotifierProvider(
+            create: (_) => LearningMemberSession()..setMemberId(42),
+          ),
+        ],
+        child: _testApp(),
+      ),
+    );
+    AppRouter.router.go('/my/ratings');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('평점 삭제'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('취소'));
+    await tester.pumpAndSettle();
+    expect(requests, ['GET /v6/members/42/ratings']);
+    expect(find.text('별점 4 / 5'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('평점 삭제'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '삭제'));
+    await tester.pumpAndSettle();
+    expect(find.text('등록한 평점이 없어요.'), findsOneWidget);
+    expect(requests, [
+      'GET /v6/members/42/ratings',
+      'DELETE /v6/members/42/ratings/12',
+      'GET /v6/members/42/ratings',
+    ]);
+    AppRouter.router.go('/start');
+    await tester.pumpAndSettle();
+    dio.close();
+  });
 
   testWidgets('Figma 기준 프로필 정보가 표시된다', (tester) async {
     await tester.pumpWidget(
@@ -335,5 +542,60 @@ class _TestMovieService extends TmdbMovieService {
       totalPages: 1,
       totalResults: results.length,
     );
+  }
+}
+
+class _TestSignUpService extends SignUpService {
+  _TestSignUpService() : super(Dio());
+
+  int _calls = 0;
+
+  @override
+  Future<bool> checkNickname(String nickname) async => true;
+
+  @override
+  Future<bool> checkEmail(String email) async => true;
+
+  @override
+  Future<CommonResponse<SignUpResult>> signUp(
+    CreateMemberRequest request,
+  ) async {
+    if (_calls++ == 0) {
+      final options = RequestOptions(path: '/v6/members');
+      throw DioException(
+        requestOptions: options,
+        response: Response(
+          requestOptions: options,
+          statusCode: 409,
+          data: {'message': '이미 사용 중인 이메일입니다.'},
+        ),
+      );
+    }
+    return CommonResponse(
+      isSuccess: true,
+      code: 'OK',
+      message: '',
+      result: SignUpResult(
+        memberId: 42,
+        email: request.email,
+        nickname: request.nickname,
+      ),
+    );
+  }
+}
+
+class _TestRatingService extends RatingApiService {
+  _TestRatingService() : super(Dio());
+
+  int? memberId;
+  CreateRatingRequest? request;
+
+  @override
+  Future<void> createRating({
+    required int memberId,
+    required CreateRatingRequest request,
+  }) async {
+    this.memberId = memberId;
+    this.request = request;
   }
 }

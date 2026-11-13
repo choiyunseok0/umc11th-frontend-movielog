@@ -19,6 +19,8 @@ class TmdbMovieDto {
   final String releaseDate;
   final List<int> genreIds;
   final double voteAverage;
+
+  double get ratingOutOfFive => voteAverage / 2;
   final double popularity;
 
   String? get posterUrl {
