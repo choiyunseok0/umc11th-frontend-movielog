@@ -97,6 +97,47 @@ class AuthViewModel extends ChangeNotifier {
     if (!_disposed) _notify();
   }
 
+  Future<void> restoreSession() async {
+    if (_disposed ||
+        storageCleanupInProgress ||
+        status == AuthStatus.authenticating) {
+      return;
+    }
+    final version = ++_sessionVersion;
+    status = AuthStatus.initializing;
+    member = null;
+    memberStatus = MemberLoadStatus.idle;
+    message = null;
+    _notify();
+    try {
+      final token = await _storage.readAccessToken();
+      if (!_isCurrent(version)) return;
+      if (token == null || token.isEmpty) {
+        status = AuthStatus.signedOut;
+      } else {
+        final me = await _memberApi.fetchMe();
+        if (!_isCurrent(version)) return;
+        member = me;
+        memberStatus = MemberLoadStatus.success;
+        status = AuthStatus.signedIn;
+      }
+    } on DioException catch (error) {
+      if (!_isCurrent(version)) return;
+      final code = apiErrorCode(error);
+      if (code == 'AUTH401_2' || code == 'AUTH401_3' || code == 'AUTH401_4') {
+        await expireSession(version);
+        return;
+      }
+      status = AuthStatus.retryRequired;
+      message = '로그인 상태를 확인하지 못했어요. 다시 시도해 주세요.';
+    } catch (_) {
+      if (!_isCurrent(version)) return;
+      status = AuthStatus.retryRequired;
+      message = '저장된 로그인 정보나 서버 응답을 확인하지 못했어요. 다시 시도해 주세요.';
+    }
+    if (_isCurrent(version)) _notify();
+  }
+
   Future<void> loadMember({bool force = false}) async {
     if (_disposed ||
         status != AuthStatus.signedIn ||

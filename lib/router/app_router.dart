@@ -1,3 +1,5 @@
+import '../view_models/auth_view_model.dart';
+import '../screens/login_screen.dart';
 import '../view_models/movie_detail_view_model.dart';
 import '../view_models/learning_member_session.dart';
 import '../data/services/rating_api_service.dart';
@@ -25,14 +27,25 @@ import '../screens/start_screen.dart';
 
 abstract final class AppRouter {
   static const startPath = '/start';
+  static const loginPath = '/login';
   static const registerPath = '/register';
   static const homePath = '/home';
   static const moviesPath = '/movies';
   static const myPagePath = '/my';
 
-  static final router = GoRouter(
+  static final router = createRouter();
+
+  static GoRouter createRouter({AuthViewModel? auth}) => GoRouter(
     initialLocation: startPath,
+    refreshListenable: auth,
+    redirect: auth == null
+        ? null
+        : (context, state) => authRedirect(auth.status, state.uri.path),
     routes: [
+      GoRoute(
+        path: loginPath,
+        builder: (context, state) => const LoginScreen(),
+      ),
       GoRoute(
         path: startPath,
         builder: (context, state) => const StartScreen(),
@@ -44,7 +57,14 @@ abstract final class AppRouter {
           final screen = RegisterScreen(
             onRegistered: (memberId) {
               context.read<LearningMemberSession>().setMemberId(memberId);
-              context.go(moviesPath);
+              if (auth == null) {
+                context.go(moviesPath);
+              } else {
+                context.go(loginPath);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('가입했어요. 새 계정으로 로그인해 주세요.')),
+                );
+              }
             },
           );
           if (service == null) return screen;
@@ -162,4 +182,16 @@ abstract final class AppRouter {
       ),
     ],
   );
+}
+
+String? authRedirect(AuthStatus status, String location) {
+  final atPublic = location == '/login' || location == '/register';
+  final atStart = location == '/start';
+  return switch (status) {
+    AuthStatus.initializing ||
+    AuthStatus.retryRequired => atStart ? null : '/start',
+    AuthStatus.signedOut ||
+    AuthStatus.authenticating => atPublic ? null : '/login',
+    AuthStatus.signedIn => atStart || atPublic ? '/home' : null,
+  };
 }
