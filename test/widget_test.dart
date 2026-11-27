@@ -1,3 +1,10 @@
+import 'package:movielog/core/network/token_storage.dart';
+import 'package:movielog/data/models/rating_dto.dart';
+import 'package:movielog/data/models/member_info.dart';
+import 'package:movielog/data/services/auth_api_service.dart';
+import 'package:movielog/data/services/member_api_service.dart';
+import 'package:movielog/view_models/auth_view_model.dart';
+import 'package:movielog/view_models/rating_session.dart';
 import 'package:movielog/data/models/rating_request.dart';
 import 'package:movielog/data/services/rating_api_service.dart';
 import 'package:movielog/data/models/common_response.dart';
@@ -243,10 +250,25 @@ void main() {
   for (final location in ['/home', '/movies']) {
     testWidgets('$location 실제 영화 ID가 상세와 평점까지 전달된다', (tester) async {
       final service = _TestRatingService();
+      final auth =
+          AuthViewModel(
+              AuthApiService(Dio()),
+              MemberApiService(Dio()),
+              _RatingStorage(),
+            )
+            ..status = AuthStatus.signedIn
+            ..member = MemberInfo(
+              email: 'test@example.com',
+              nickname: '테스트',
+              createdAt: DateTime(2026),
+            );
+      addTearDown(auth.dispose);
       await tester.pumpWidget(
         MultiProvider(
           providers: [
             Provider<RatingApiService>.value(value: service),
+            ChangeNotifierProvider.value(value: auth),
+            ChangeNotifierProvider(create: (_) => RatingSession(auth)),
             ChangeNotifierProvider(
               create: (_) => LearningMemberSession()..setMemberId(42),
             ),
@@ -313,15 +335,14 @@ void main() {
       await tester.pumpAndSettle();
       await tester.drag(find.byType(ListView), const Offset(0, -600));
       await tester.pumpAndSettle();
-      expect(find.text('내 평점 4 / 5'), findsOneWidget);
-      expect(service.memberId, 42);
+      expect(find.text('내 평점 3 / 5'), findsOneWidget);
       expect(service.request?.toJson(), {
         'movieId': movie.id,
         'score': 4,
         'comment': '좋았어요',
       });
+      await tester.pumpWidget(const SizedBox.shrink());
       AppRouter.router.go('/start');
-      await tester.pumpAndSettle();
     });
   }
 
@@ -366,7 +387,7 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          Provider<RatingApiService>.value(value: RatingApiService(dio)),
+          Provider<RatingApiService>.value(value: RatingApiService(dio, dio)),
           ChangeNotifierProvider(
             create: (_) => LearningMemberSession()..setMemberId(42),
           ),
@@ -394,10 +415,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('별점 4 / 5'), findsOneWidget);
     expect(requests, [
-      'GET /v6/members/42/ratings',
+      'GET /v7/members/42/ratings',
       'PATCH /v6/members/42/ratings/12',
-      'GET /v6/members/42/ratings',
-      'GET /v6/members/42/ratings',
+      'GET /v7/members/42/ratings',
+      'GET /v7/members/42/ratings',
     ]);
     AppRouter.router.go('/start');
     await tester.pumpAndSettle();
@@ -442,7 +463,7 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          Provider<RatingApiService>.value(value: RatingApiService(dio)),
+          Provider<RatingApiService>.value(value: RatingApiService(dio, dio)),
           ChangeNotifierProvider(
             create: (_) => LearningMemberSession()..setMemberId(42),
           ),
@@ -456,7 +477,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('취소'));
     await tester.pumpAndSettle();
-    expect(requests, ['GET /v6/members/42/ratings']);
+    expect(requests, ['GET /v7/members/42/ratings']);
     expect(find.text('별점 4 / 5'), findsOneWidget);
 
     await tester.tap(find.byTooltip('평점 삭제'));
@@ -465,9 +486,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('등록한 평점이 없어요.'), findsOneWidget);
     expect(requests, [
-      'GET /v6/members/42/ratings',
+      'GET /v7/members/42/ratings',
       'DELETE /v6/members/42/ratings/12',
-      'GET /v6/members/42/ratings',
+      'GET /v7/members/42/ratings',
     ]);
     AppRouter.router.go('/start');
     await tester.pumpAndSettle();
@@ -585,17 +606,28 @@ class _TestSignUpService extends SignUpService {
 }
 
 class _TestRatingService extends RatingApiService {
-  _TestRatingService() : super(Dio());
+  _TestRatingService() : super(Dio(), Dio());
 
-  int? memberId;
   CreateRatingRequest? request;
 
   @override
-  Future<void> createRating({
-    required int memberId,
-    required CreateRatingRequest request,
-  }) async {
-    this.memberId = memberId;
+  Future<RatingDto> createRating(CreateRatingRequest request) async {
     this.request = request;
+    return RatingDto(
+      ratingId: 10,
+      movieId: request.movieId,
+      score: 3,
+      comment: request.comment,
+      createdAt: DateTime(2026),
+    );
   }
+}
+
+class _RatingStorage implements TokenStorage {
+  @override
+  Future<void> deleteAccessToken() async {}
+  @override
+  Future<String?> readAccessToken() async => null;
+  @override
+  Future<void> saveAccessToken(String token) async {}
 }

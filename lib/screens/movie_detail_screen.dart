@@ -24,14 +24,13 @@ class MovieDetailScreen extends StatefulWidget {
 
 class _MovieDetailScreenState extends State<MovieDetailScreen> {
   bool _isFavorite = false;
-  int? _myRating;
 
   Future<void> _openRatingDialog() async {
     final vm = context.read<MovieDetailViewModel?>();
     if (vm == null) {
       final message = widget.tmdbMovie == null
           ? 'TMDB 영화에서 평점을 남길 수 있어요.'
-          : '먼저 회원가입을 완료해 주세요.';
+          : '먼저 로그인해 주세요.';
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
       return;
@@ -42,7 +41,8 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
       barrierDismissible: false,
       builder: (context) => RatingDialog(
         movieId: widget.movieId,
-        initialRating: _myRating?.toDouble() ?? 0,
+        initialRating: vm.rating?.score.toDouble() ?? 0,
+        initialComment: vm.rating?.comment,
         // 입력창에 vm.createRating을 넘겨서 확인 버튼을 눌렀을 때 저장을 요청함
         onSubmit: vm.createRating,
         showErrorSnackBar: true,
@@ -50,7 +50,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     );
     if (!mounted || rating == null) return;
     // 3. 저장에 성공하면 setState()로 내 평점을 갱신하고 아래에 '평점을 저장했다'는 알림을 띄움
-    setState(() => _myRating = rating);
+    if (!vm.isCurrentSession) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('평점을 저장했습니다.')));
   }
@@ -70,6 +70,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final savedRating = context.watch<MovieDetailViewModel?>()?.rating;
     final tmdbMovie = widget.tmdbMovie;
     final movie = tmdbMovie == null ? findMovieById(widget.movieId) : null;
 
@@ -117,7 +118,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
       ),
       bottomNavigationBar: _DetailActionBar(
         isFavorite: _isFavorite,
-        hasRating: _myRating != null,
+        hasRating: savedRating != null,
         onFavoritePressed: _toggleFavorite,
         // 1. '평점 남기기' 버튼을 입력창에 연결함
         // 버튼을 누르면 -> MovieDetailviewModel을 가져옴 -> 별점과 코멘트 입력창이 열림 -> VM없으면 TMDB 영화에서 평점으 남기거나 회원가입을 완료하라는 안내를 띄움
@@ -199,11 +200,11 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                   style: Theme.of(context).textTheme.bodyLarge
                       ?.copyWith(height: 1.65),
                 ),
-                if (_myRating != null) ...[
+                if (savedRating != null) ...[
                   const SizedBox(height: 24),
                   Text(
                     // 내가 입력한 평점은 1~5까지의 정수값만 입력가능하게 해둠
-                    '내 평점 $_myRating / 5',
+                    '내 평점 ${savedRating.score} / 5',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ],

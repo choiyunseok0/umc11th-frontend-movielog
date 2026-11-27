@@ -1,3 +1,4 @@
+import 'view_models/rating_session.dart';
 import 'core/network/auth_interceptor.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -62,11 +63,20 @@ class MovieLogApp extends StatelessWidget {
             context.read<TokenStorage>(),
           ),
         ),
+        ChangeNotifierProvider(
+          create: (context) => RatingSession(context.read<AuthViewModel>()),
+        ),
         Provider<SignUpService>(
           create: (context) => SignUpService(context.read()),
         ),
         Provider<RatingApiService>(
-          create: (context) => RatingApiService(context.read()),
+          create: (context) => RatingApiService(
+            context.read(),
+            createAuthenticatedMovieLogClient(
+              context.read<TokenStorage>(),
+              interceptor: context.read<AuthInterceptor>(),
+            ),
+          ),
         ),
       ],
       child: const _RoutedApp(),

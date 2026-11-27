@@ -1,3 +1,4 @@
+import '../view_models/rating_session.dart';
 import '../data/services/member_api_service.dart';
 import '../screens/profile_edit_screen.dart';
 import '../view_models/profile_edit_view_model.dart';
@@ -197,15 +198,24 @@ abstract final class AppRouter {
             );
           }
           final screen = MovieDetailScreen(movieId: movieId, tmdbMovie: movie);
-          final memberId = context.watch<LearningMemberSession?>()?.memberId;
+          final auth = context.watch<AuthViewModel?>();
+          final session = context.read<RatingSession?>();
           final service = context.read<RatingApiService?>();
-          if (movie == null || memberId == null || service == null) {
+          if (movie == null ||
+              auth == null ||
+              session == null ||
+              auth.status != AuthStatus.signedIn ||
+              service == null) {
             return screen;
           }
           return ChangeNotifierProvider(
-            key: ValueKey((memberId, movie.id)),
-            create: (_) => MovieDetailViewModel(service, memberId, movie.id),
-            child: screen,
+            key: ValueKey((auth.sessionVersion, movie.id)),
+            create: (_) => MovieDetailViewModel(service, auth, session, movie),
+            child: MovieDetailScreen(
+              key: ValueKey((auth.sessionVersion, movie.id)),
+              movieId: movieId,
+              tmdbMovie: movie,
+            ),
           );
         },
       ),

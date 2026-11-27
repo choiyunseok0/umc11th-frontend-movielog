@@ -1,32 +1,38 @@
-// 서버에 실제로 요청을 보내는 파일 
+// 서버에 실제로 요청을 보내는 파일
 
 import 'package:dio/dio.dart';
 
 import '../../core/network/study_capture.dart';
 import '../models/rating_dto.dart';
+import '../models/common_response.dart';
+import '../../core/network/api_error.dart';
 import '../models/rating_request.dart';
 
 class RatingApiService {
-  RatingApiService(this._dio);
+  RatingApiService(this._publicDio, this._authDio);
 
-  final Dio _dio;
+  final Dio _publicDio;
+  final Dio _authDio;
 
-  // 1. ViewModel에서 회원 ID와 요청 객체를 받기  --> MovieDetailViewModel이 회원 ID와 CreatRatingRequest를 넘겨줌(요청 객체 안에는 영화 ID, 별점, 코멘트가 들어있음)
-  Future<void> createRating({
-    required int memberId,
-    required CreateRatingRequest request,
-  }) async {
-
-    // 2. 평점 등록 요청 보내기 
-    // 회원 ID는 요청 주소에 넣고, 영화 ID, 별점, 코멘트는 toJson()으로 바꿔 요청 본문에 넣음
-    final response = await _dio.post(
-      '/v6/members/$memberId/ratings',
+  Future<RatingDto> createRating(CreateRatingRequest request) async {
+    final response = await _authDio.post<Map<String, dynamic>>(
+      '/v7/ratings',
       data: request.toJson(),
     );
-    // 3. 응답이 201인지 확인하기 - 저장이 됐는지만 확인하면 되기 때문에 응답 본문을 읽어서 돌려주지는 않음
-    if (response.statusCode != 201) {
+    if (response.statusCode != 201 || response.data == null) {
       throw StateError('예상하지 못한 평점 등록 응답입니다.');
     }
+    final common = CommonResponse<RatingDto>.fromJson(
+      response.data!,
+      (value) => RatingDto.fromJson(value as Map<String, dynamic>),
+    );
+    final rating = common.result;
+    if (!common.isSuccess ||
+        rating == null ||
+        rating.movieId != request.movieId) {
+      throw StateError('평점 등록 결과를 확인하지 못했습니다.');
+    }
+    return rating;
   }
 
   Future<void> updateRating({
@@ -40,7 +46,7 @@ class RatingApiService {
     }
 
     // 7.4.1 기존 평점 수정 요청
-    final response = await _dio.patch(
+    final response = await _publicDio.patch(
       '/v6/members/$memberId/ratings/$ratingId',
       data: {'score': score, 'comment': comment},
     );
@@ -59,12 +65,12 @@ class RatingApiService {
     required int ratingId,
   }) async {
     // 7.5.1.2 서버에 DELETE 요청을 보냄 (삭제 대상은 주소에 들어가므로 요청 본문은 따로 보내지 않아도 ㄱㅊ음)
-    final response = await _dio.delete<void>(
+    final response = await _publicDio.delete<void>(
       '/v6/members/$memberId/ratings/$ratingId',
     );
 
     // 7.5.1.3 응답이 204인지 확인함
-    // '204 No Content'는 요청이 성공했고 응답 본문이 비어있단 뜻 
+    // '204 No Content'는 요청이 성공했고 응답 본문이 비어있단 뜻
     if (response.statusCode != 204) {
       throw StateError('예상하지 못한 평점 삭제 응답입니다.');
     }
@@ -76,13 +82,13 @@ class RatingApiService {
       if (StudyCapture.ratings == 'empty') return [];
       if (StudyCapture.ratings == 'error') {
         throw DioException(
-          requestOptions: RequestOptions(path: '/v6/members/$memberId/ratings'),
+          requestOptions: RequestOptions(path: '/v7/members/$memberId/ratings'),
           type: DioExceptionType.connectionError,
         );
       }
     }
-    final response = await _dio.get<List<dynamic>>(
-      '/v6/members/$memberId/ratings',
+    final response = await _publicDio.get<List<dynamic>>(
+      '/v7/members/$memberId/ratings',
     );
     return response.data!
         .map((item) => RatingDto.fromJson(item as Map<String, dynamic>))
@@ -98,8 +104,19 @@ String writeMyRatingsErrorMessage(DioException error) {
 }
 
 String writeRatingErrorMessage(DioException error) {
-  
   // 4. 실패하면 화면에 보여줄 문구 정하기 - 이 문구를 ViewModel이 팝업에 전달함
+  switch (apiErrorCode(error)) {
+    case 'AUTH401_2' || 'AUTH401_3' || 'AUTH401_4':
+      return '로그인이 만료됐어요. 다시 로그인해 주세요.';
+    case 'RATING403_1':
+      return '이 평점을 변경할 권한이 없습니다.';
+    case 'RATING409_1':
+      return '이미 이 영화에 평점을 남겼습니다.';
+    case 'RATING404_1':
+      return '평점 정보를 찾을 수 없습니다.';
+    case 'MEMBER404_1':
+      return '회원 정보를 찾을 수 없습니다.';
+  }
   final data = error.response?.data;
   final message = data is Map ? data['message'] : null;
   if (message is String && message.trim().isNotEmpty) return message;
