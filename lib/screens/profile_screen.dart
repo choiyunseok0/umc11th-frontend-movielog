@@ -16,9 +16,19 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      appBar: CommonAppBar(title: '내 프로필'),
-      body: ProfileBody(),
+    final auth = context.watch<AuthViewModel?>();
+    return Scaffold(
+      appBar: CommonAppBar(
+        title: '내 프로필',
+        actions: [
+          if (auth != null)
+            TextButton(
+              onPressed: auth.storageCleanupInProgress ? null : auth.logout,
+              child: const Text('로그아웃'),
+            ),
+        ],
+      ),
+      body: const ProfileBody(),
     );
   }
 }

@@ -14,8 +14,11 @@ Dio createMovieLogClient() {
   );
 }
 
-Dio createAuthenticatedMovieLogClient(TokenStorage storage) {
+Dio createAuthenticatedMovieLogClient(
+  TokenStorage storage, {
+  AuthInterceptor? interceptor,
+}) {
   final client = createMovieLogClient();
-  client.interceptors.add(AuthInterceptor(storage));
+  client.interceptors.add(interceptor ?? AuthInterceptor(storage));
   return client;
 }

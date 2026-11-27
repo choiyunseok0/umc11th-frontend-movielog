@@ -17,6 +17,29 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
 
+  late final AuthViewModel _auth;
+  bool _noticeScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _auth = context.read<AuthViewModel>();
+    _auth.addListener(_scheduleExpirationNotice);
+    _scheduleExpirationNotice();
+  }
+
+  void _scheduleExpirationNotice() {
+    if (!mounted || !_auth.sessionExpired || _noticeScheduled) return;
+    _noticeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _noticeScheduled = false;
+      if (!mounted || !_auth.consumeSessionExpired()) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('로그인이 만료됐어요. 다시 로그인해 주세요.')));
+    });
+  }
+
   Future<void> _login() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
@@ -25,6 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _auth.removeListener(_scheduleExpirationNotice);
     _email.dispose();
     _password.dispose();
     super.dispose();

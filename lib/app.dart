@@ -1,3 +1,5 @@
+import 'core/network/auth_interceptor.dart';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 
@@ -39,12 +41,18 @@ class MovieLogApp extends StatelessWidget {
         Provider<TokenStorage>(
           create: (_) => SecureTokenStorage(const FlutterSecureStorage()),
         ),
+        Provider<AuthInterceptor>(
+          create: (context) => AuthInterceptor(context.read<TokenStorage>()),
+        ),
         Provider<AuthApiService>(
           create: (context) => AuthApiService(context.read()),
         ),
         Provider<MemberApiService>(
           create: (context) => MemberApiService(
-            createAuthenticatedMovieLogClient(context.read<TokenStorage>()),
+            createAuthenticatedMovieLogClient(
+              context.read<TokenStorage>(),
+              interceptor: context.read<AuthInterceptor>(),
+            ),
           ),
         ),
         ChangeNotifierProvider(
@@ -75,19 +83,32 @@ class _RoutedApp extends StatefulWidget {
 
 class _RoutedAppState extends State<_RoutedApp> {
   late final GoRouter _router;
+  late final AuthViewModel _auth;
 
   @override
   void initState() {
     super.initState();
     final auth = context.read<AuthViewModel>();
+    _auth = auth;
+    final interceptor = context.read<AuthInterceptor>();
+    interceptor.sessionVersion = () => auth.sessionVersion;
+    interceptor.onSessionExpired = auth.expireSession;
+    _auth.addListener(_clearMemberSession);
     _router = AppRouter.createRouter(auth: auth);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) auth.restoreSession();
     });
   }
 
+  void _clearMemberSession() {
+    if (_auth.status == AuthStatus.signedOut) {
+      context.read<LearningMemberSession>().clear();
+    }
+  }
+
   @override
   void dispose() {
+    _auth.removeListener(_clearMemberSession);
     _router.dispose();
     super.dispose();
   }

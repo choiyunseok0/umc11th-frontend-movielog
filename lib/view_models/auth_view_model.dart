@@ -183,6 +183,12 @@ class AuthViewModel extends ChangeNotifier {
     await _clearCurrentSession(expired: true);
   }
 
+  bool consumeSessionExpired() {
+    if (!sessionExpired) return false;
+    sessionExpired = false;
+    return true;
+  }
+
   Future<void> logout() => _clearCurrentSession(expired: false);
 
   Future<void> _clearCurrentSession({required bool expired}) async {

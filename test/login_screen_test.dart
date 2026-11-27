@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:movielog/core/network/token_storage.dart';
 import 'package:movielog/data/models/login_models.dart';
+import 'package:movielog/data/models/member_info.dart';
 import 'package:movielog/data/services/auth_api_service.dart';
 import 'package:movielog/data/services/member_api_service.dart';
 import 'package:movielog/router/app_router.dart';
@@ -88,6 +89,63 @@ void main() {
           .text,
       'wrong',
     );
+    await tester.pumpWidget(const SizedBox.shrink());
+    router.dispose();
+    auth.dispose();
+  });
+  testWidgets('만료 안내는 한 번 표시되고 직접 로그아웃에는 표시되지 않는다', (tester) async {
+    final auth = AuthViewModel(_AuthApi(), MemberApiService(Dio()), _Storage())
+      ..status = AuthStatus.signedIn
+      ..member = MemberInfo(
+        email: 'test@example.com',
+        nickname: '테스트',
+        createdAt: DateTime(2026),
+      );
+    final router = AppRouter.createRouter(auth: auth)..go('/my');
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: auth,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await auth.expireSession(auth.sessionVersion);
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/login');
+    expect(find.text('로그인이 만료됐어요. 다시 로그인해 주세요.'), findsOneWidget);
+    expect(auth.sessionExpired, isFalse);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await auth.logout();
+    await tester.pumpAndSettle();
+    expect(find.text('로그인이 만료됐어요. 다시 로그인해 주세요.'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    router.dispose();
+    auth.dispose();
+  });
+
+  testWidgets('마이페이지 로그아웃 버튼으로 로그인 화면에 돌아간다', (tester) async {
+    final auth = AuthViewModel(_AuthApi(), MemberApiService(Dio()), _Storage())
+      ..status = AuthStatus.signedIn
+      ..member = MemberInfo(
+        email: 'test@example.com',
+        nickname: '테스트',
+        createdAt: DateTime(2026),
+      );
+    final router = AppRouter.createRouter(auth: auth)..go('/my');
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: auth,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('로그아웃'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/login');
+    expect(auth.member, isNull);
+    expect(auth.sessionExpired, isFalse);
+    expect(find.text('로그인이 만료됐어요. 다시 로그인해 주세요.'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     router.dispose();
     auth.dispose();
