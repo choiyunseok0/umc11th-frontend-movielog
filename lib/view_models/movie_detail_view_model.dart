@@ -11,7 +11,9 @@ import 'rating_session.dart';
 
 class MovieDetailViewModel extends ChangeNotifier {
   MovieDetailViewModel(this._service, this._auth, this._session, this.movie)
-    : _version = _auth.sessionVersion;
+    : _version = _auth.sessionVersion {
+    _session.addListener(_onSessionChanged);
+  }
 
   final RatingApiService _service;
   final AuthViewModel _auth;
@@ -28,15 +30,30 @@ class MovieDetailViewModel extends ChangeNotifier {
 
   RatingDto? get rating => _session.findByMovieId(movie.id);
 
-  Future<String?> createRating(int score, String comment) async {
+  Future<String?> saveRating(int score, String comment) async {
     if (!isCurrentSession) return '먼저 로그인해 주세요.';
     if (isSubmitting) return '이미 평점을 저장하고 있습니다.';
     isSubmitting = true;
     notifyListeners();
     try {
-      final saved = await _service.createRating(
-        CreateRatingRequest(movieId: movie.id, score: score, comment: comment),
-      );
+      final previous = rating;
+      final text = comment.trim();
+      final saved = previous == null
+          ? await _service.createRating(
+              CreateRatingRequest(
+                movieId: movie.id,
+                score: score,
+                comment: text,
+              ),
+            )
+          : await _service.updateRating(
+              ratingId: previous.ratingId,
+              score: score,
+              comment: text.isEmpty ? null : text,
+            );
+      if (saved.movieId != movie.id) {
+        throw StateError('저장한 영화 번호가 응답과 다릅니다.');
+      }
       if (!isCurrentSession) return '로그인 상태가 변경됐어요.';
       _session.save(saved, movie, _version);
       return null;
@@ -58,9 +75,14 @@ class MovieDetailViewModel extends ChangeNotifier {
     }
   }
 
+  void _onSessionChanged() {
+    if (isCurrentSession) notifyListeners();
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    _session.removeListener(_onSessionChanged);
     super.dispose();
   }
 }

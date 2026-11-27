@@ -43,8 +43,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
         movieId: widget.movieId,
         initialRating: vm.rating?.score.toDouble() ?? 0,
         initialComment: vm.rating?.comment,
-        // 입력창에 vm.createRating을 넘겨서 확인 버튼을 눌렀을 때 저장을 요청함
-        onSubmit: vm.createRating,
+        onSubmit: vm.saveRating,
         showErrorSnackBar: true,
       ),
     );

@@ -16,9 +16,6 @@ class MyRatingsScreen extends StatelessWidget {
       context: context,
       barrierDismissible: false,
 
-      // 7.4.4.1 수정 팝업에 기존 별점과 코멘트를 채움
-      // 팝업을 열면 기존 별점과 코멘트가 미리 드렁있음
-      // 확인을 누르면 수정할 평점의 번호 ratingId와 새 값을 ViewModel에 넘김
       builder: (_) => RatingDialog(
         movieId: rating.movieId,
         initialRating: rating.score.toDouble(),
@@ -28,13 +25,9 @@ class MyRatingsScreen extends StatelessWidget {
       ),
     );
 
-    // 7.4.4.2 저장에 성공하면 목록을 다시 조회함
-    // 팝업을 취소하면 saved가 null이라 끝나고
-    // 저장에 성공하면 '평점을 수정했어요'라는 알림이 뜸 + vm.load()로 최신 평점 목록을 불러옴
-    if (!context.mounted || saved == null) return;
+    if (!context.mounted || saved == null || !vm.isCurrentSession) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('평점을 수정했어요.')));
-    await vm.load();
   }
 
   Future<void> _deleteRating(
@@ -113,8 +106,6 @@ class MyRatingsScreen extends StatelessWidget {
                                 error = null;
                               });
 
-                              // 7.5.3.2 팝업에서 삭제를 누르면 ViewModel에 요청함
-                              // 삭제할 평점의 ID를 넘기고 요청 중엔 버튼 비활성화 + '삭제 중...' 을 표시
                               final result = await vm.deleteRating(
                                 entry.rating.ratingId,
                               );
@@ -139,65 +130,50 @@ class MyRatingsScreen extends StatelessWidget {
       ),
     );
 
-    // 7.5.3.3 삭제에 성공하면 목록을 다시 불러옴
-    // vm.load()로 최신 목록을 불러옴
-    if (!context.mounted || deleted != true) return;
+    if (!context.mounted || deleted != true || !vm.isCurrentSession) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('평점을 삭제했어요.')));
-    await vm.load();
   }
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<MyRatingsViewModel>();
-    return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
-        foregroundColor: AppColors.onSurface,
-        title: const Text(
-          '내가 등록한 평점',
-          style: TextStyle(
-            color: AppColors.primary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: switch (vm.status) {
-          MyRatingsLoadStatus.idle || MyRatingsLoadStatus.loading =>
-            const Center(child: CircularProgressIndicator()),
-          MyRatingsLoadStatus.empty => const Center(
-            child: Text('등록한 평점이 없어요.'),
-          ),
-          MyRatingsLoadStatus.error => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(vm.message ?? '', textAlign: TextAlign.center),
-                  if (vm.memberId != null)
-                    TextButton(onPressed: vm.load, child: const Text('다시 시도')),
-                ],
-              ),
+    return PopScope(
+      canPop: !vm.isSaving,
+      child: Scaffold(
+        appBar: AppBar(
+          centerTitle: true,
+          foregroundColor: AppColors.onSurface,
+          title: const Text(
+            '내가 등록한 평점',
+            style: TextStyle(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          MyRatingsLoadStatus.success => ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
-            separatorBuilder: (_, _) => const SizedBox(height: 16),
-            itemCount: vm.ratings.length,
-            itemBuilder: (context, index) {
-              final entry = vm.ratings[index];
-              return _RatingCard(
-                entry: entry,
-                onEdit: () => _editRating(context, entry),
+        ),
+        body: SafeArea(
+          child: vm.ratings.isEmpty
+              ? const Center(child: Text('현재 로그인 후 등록한 평점이 없어요.'))
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
+                  separatorBuilder: (_, _) => const SizedBox(height: 16),
+                  itemCount: vm.ratings.length,
+                  itemBuilder: (context, index) {
+                    final entry = vm.ratings[index];
+                    return _RatingCard(
+                      entry: entry,
+                      onEdit: vm.isSaving
+                          ? null
+                          : () => _editRating(context, entry),
 
-                // 7.5.3.1 휴지통 버튼을 누르면 해당 카드의 삭제 팝업을 열음
-                onDelete: () => _deleteRating(context, entry),
-              );
-            },
-          ),
-        },
+                      onDelete: vm.isSaving
+                          ? null
+                          : () => _deleteRating(context, entry),
+                    );
+                  },
+                ),
+        ),
       ),
     );
   }
@@ -211,8 +187,8 @@ class _RatingCard extends StatelessWidget {
   });
 
   final RatingWithMovie entry;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {

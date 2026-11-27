@@ -32,6 +32,30 @@ class RatingSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  void update(RatingDto rating, int version) {
+    if (_auth.status != AuthStatus.signedIn ||
+        version != _auth.sessionVersion) {
+      return;
+    }
+    final entry = _ratings[rating.ratingId];
+    if (entry == null || entry.rating.movieId != rating.movieId) {
+      throw StateError('현재 세션의 평점과 수정 응답이 다릅니다.');
+    }
+    _ratings[rating.ratingId] = RatingWithMovie(
+      rating: rating,
+      movie: entry.movie,
+    );
+    notifyListeners();
+  }
+
+  void remove(int ratingId, int version) {
+    if (_auth.status != AuthStatus.signedIn ||
+        version != _auth.sessionVersion) {
+      return;
+    }
+    if (_ratings.remove(ratingId) != null) notifyListeners();
+  }
+
   void _onAuthChanged() {
     if (_version == _auth.sessionVersion) return;
     _version = _auth.sessionVersion;

@@ -123,7 +123,7 @@ void main() {
     session.save(saved, movie, auth.sessionVersion);
     expect(session.ratings.single.rating.ratingId, 12);
     final vm = MovieDetailViewModel(service, auth, session, movie);
-    final request = vm.createRating(4, '');
+    final request = vm.saveRating(4, '');
     await auth.logout();
     response.complete(saved);
     expect(await request, isNotNull);

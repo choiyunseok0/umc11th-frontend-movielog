@@ -22,21 +22,14 @@ class RatingApiService {
     if (response.statusCode != 201 || response.data == null) {
       throw StateError('예상하지 못한 평점 등록 응답입니다.');
     }
-    final common = CommonResponse<RatingDto>.fromJson(
-      response.data!,
-      (value) => RatingDto.fromJson(value as Map<String, dynamic>),
-    );
-    final rating = common.result;
-    if (!common.isSuccess ||
-        rating == null ||
-        rating.movieId != request.movieId) {
-      throw StateError('평점 등록 결과를 확인하지 못했습니다.');
+    final rating = _parseRating(response.data!);
+    if (rating.movieId != request.movieId) {
+      throw StateError('등록한 영화 번호가 응답과 다릅니다.');
     }
     return rating;
   }
 
-  Future<void> updateRating({
-    required int memberId,
+  Future<RatingDto> updateRating({
     required int ratingId,
     required int score,
     String? comment,
@@ -44,36 +37,44 @@ class RatingApiService {
     if (score < 1 || score > 5) {
       throw ArgumentError('별점은 1~5 사이 정수여야 합니다.');
     }
-
-    // 7.4.1 기존 평점 수정 요청
-    final response = await _publicDio.patch(
-      '/v6/members/$memberId/ratings/$ratingId',
+    final response = await _authDio.patch<Map<String, dynamic>>(
+      '/v7/ratings/$ratingId',
       data: {'score': score, 'comment': comment},
     );
-    // 원래 PATCH 응답에 수정된 값이 들어 있으면 GET을 다시 호출할 필요 없음
-    // 다만 지금 코드에서는 200인지 아닌지 확인만 하고있긴함
-    // 그래서 서버에 저장된 최신 평점 목록을 다시 확인하려면 GET을 호출해야함
-    if (response.statusCode != 200) {
+    if (response.statusCode != 200 || response.data == null) {
       throw StateError('예상하지 못한 평점 수정 응답입니다.');
+    }
+    final rating = _parseRating(response.data!);
+    if (rating.ratingId != ratingId) {
+      throw StateError('수정한 평점 번호가 응답과 다릅니다.');
+    }
+    return rating;
+  }
+
+  Future<void> deleteRating(int ratingId) async {
+    final response = await _authDio.delete<Map<String, dynamic>>(
+      '/v7/ratings/$ratingId',
+    );
+    final data = response.data;
+    if (response.statusCode != 200 ||
+        data == null ||
+        data['isSuccess'] != true ||
+        !data.containsKey('result') ||
+        data['result'] != null) {
+      throw StateError('예상하지 못한 평점 삭제 응답입니다.');
     }
   }
 
-  // 7.5.1.1 삭제할 평점 번호를 받음
-  // memberId & ratingId 두 값으로 삭제할 평점을 지정함
-  Future<void> deleteRating({
-    required int memberId,
-    required int ratingId,
-  }) async {
-    // 7.5.1.2 서버에 DELETE 요청을 보냄 (삭제 대상은 주소에 들어가므로 요청 본문은 따로 보내지 않아도 ㄱㅊ음)
-    final response = await _publicDio.delete<void>(
-      '/v6/members/$memberId/ratings/$ratingId',
+  RatingDto _parseRating(Map<String, dynamic> data) {
+    final common = CommonResponse<RatingDto>.fromJson(
+      data,
+      (value) => RatingDto.fromJson(value as Map<String, dynamic>),
     );
-
-    // 7.5.1.3 응답이 204인지 확인함
-    // '204 No Content'는 요청이 성공했고 응답 본문이 비어있단 뜻
-    if (response.statusCode != 204) {
-      throw StateError('예상하지 못한 평점 삭제 응답입니다.');
+    final rating = common.result;
+    if (!common.isSuccess || rating == null) {
+      throw StateError('평점 결과를 확인하지 못했습니다.');
     }
+    return rating;
   }
 
   Future<List<RatingDto>> fetchMyRatings(int memberId) async {
