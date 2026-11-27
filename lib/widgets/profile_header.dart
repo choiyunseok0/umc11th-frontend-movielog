@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 class ProfileHeader extends StatelessWidget {
-  const ProfileHeader({super.key});
+  const ProfileHeader({super.key, this.nickname = '무비러버', this.email});
+
+  final String nickname;
+  final String? email;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +30,7 @@ class ProfileHeader extends StatelessWidget {
           ),
         ),
         Text(
-          '무비러버',
+          nickname,
           style: textTheme.titleLarge?.copyWith(
             fontSize: 28,
             height: 36 / 28,
@@ -36,7 +39,7 @@ class ProfileHeader extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(
-          '매주 주말엔 영화관으로 출근하는 프로 관람객. 좋은\n영화를 보고 기록하는 것을 좋아합니다.',
+          email ?? '매주 주말엔 영화관으로 출근하는 프로 관람객. 좋은\n영화를 보고 기록하는 것을 좋아합니다.',
           textAlign: TextAlign.center,
           style: textTheme.bodyLarge,
         ),

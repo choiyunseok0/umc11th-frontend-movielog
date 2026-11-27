@@ -8,9 +8,15 @@ class LearningMemberSession extends ChangeNotifier {
 
   void setMemberId(int id) {
     memberId = id;
-    // 여기서 notifyListeners()가 필요한 이유 : 
-    // 이미 열려있는 화면이 회원 번호 변경을 즉시 반영해야 할 때 
+    // 여기서 notifyListeners()가 필요한 이유 :
+    // 이미 열려있는 화면이 회원 번호 변경을 즉시 반영해야 할 때
     // 예를 들면 마이페이지 -> "영화광"으로 뜨던 닉넴을 수정했을 때 수정됌과 동시에 화면이 다시 그려짐
+    notifyListeners();
+  }
+
+  void clear() {
+    if (memberId == null) return;
+    memberId = null;
     notifyListeners();
   }
 }

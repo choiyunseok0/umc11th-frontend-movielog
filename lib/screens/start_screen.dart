@@ -1,3 +1,8 @@
+import 'package:provider/provider.dart';
+
+import '../view_models/auth_view_model.dart';
+import '../widgets/movielog_button.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +12,42 @@ class StartScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthViewModel?>();
+    if (auth != null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SvgPicture.asset('assets/logos/movielog_logo.svg', height: 72),
+                const SizedBox(height: 32),
+                const Text(
+                  'MovieLog',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 32),
+                if (auth.status == AuthStatus.retryRequired) ...[
+                  Text(
+                    auth.message ?? '로그인 상태를 확인하지 못했어요.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  MovieLogButton(
+                    label: '다시 시도',
+                    onPressed: auth.restoreSession,
+                  ),
+                ] else
+                  const Center(child: CircularProgressIndicator()),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 

@@ -1,3 +1,10 @@
+import '../view_models/rating_session.dart';
+import '../data/services/member_api_service.dart';
+import '../screens/profile_edit_screen.dart';
+import '../view_models/profile_edit_view_model.dart';
+import '../widgets/movielog_button.dart';
+import '../view_models/auth_view_model.dart';
+import '../screens/login_screen.dart';
 import '../view_models/movie_detail_view_model.dart';
 import '../view_models/learning_member_session.dart';
 import '../data/services/rating_api_service.dart';
@@ -25,14 +32,25 @@ import '../screens/start_screen.dart';
 
 abstract final class AppRouter {
   static const startPath = '/start';
+  static const loginPath = '/login';
   static const registerPath = '/register';
   static const homePath = '/home';
   static const moviesPath = '/movies';
   static const myPagePath = '/my';
 
-  static final router = GoRouter(
+  static final router = createRouter();
+
+  static GoRouter createRouter({AuthViewModel? auth}) => GoRouter(
     initialLocation: startPath,
+    refreshListenable: auth,
+    redirect: auth == null
+        ? null
+        : (context, state) => authRedirect(auth.status, state.uri.path),
     routes: [
+      GoRoute(
+        path: loginPath,
+        builder: (context, state) => const LoginScreen(),
+      ),
       GoRoute(
         path: startPath,
         builder: (context, state) => const StartScreen(),
@@ -44,7 +62,14 @@ abstract final class AppRouter {
           final screen = RegisterScreen(
             onRegistered: (memberId) {
               context.read<LearningMemberSession>().setMemberId(memberId);
-              context.go(moviesPath);
+              if (auth == null) {
+                context.go(moviesPath);
+              } else {
+                context.go(loginPath);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('가입했어요. 새 계정으로 로그인해 주세요.')),
+                );
+              }
             },
           );
           if (service == null) return screen;
@@ -114,16 +139,41 @@ abstract final class AppRouter {
         ],
       ),
       GoRoute(
+        path: '$myPagePath/profile/edit',
+        builder: (context, state) {
+          final auth = context.watch<AuthViewModel>();
+          if (auth.member == null) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('프로필 수정'), centerTitle: true),
+              body: Center(
+                child: auth.memberStatus == MemberLoadStatus.error
+                    ? MovieLogButton(
+                        label: '다시 시도',
+                        onPressed: () => auth.loadMember(force: true),
+                      )
+                    : const CircularProgressIndicator(),
+              ),
+            );
+          }
+          return ChangeNotifierProvider(
+            key: ValueKey(auth.sessionVersion),
+            create: (context) =>
+                ProfileEditViewModel(context.read<MemberApiService>(), auth),
+            child: const ProfileEditScreen(),
+          );
+        },
+      ),
+      GoRoute(
         path: '$myPagePath/ratings',
         builder: (context, state) {
-          final memberId = context.watch<LearningMemberSession?>()?.memberId;
+          final auth = context.watch<AuthViewModel>();
           return ChangeNotifierProvider(
-            key: ValueKey(memberId),
+            key: ValueKey(auth.sessionVersion),
             create: (context) => MyRatingsViewModel(
               context.read<RatingApiService>(),
-              context.read<TmdbMovieService>(),
-              memberId,
-            )..load(),
+              auth,
+              context.read<RatingSession>(),
+            ),
             child: const MyRatingsScreen(),
           );
         },
@@ -148,18 +198,39 @@ abstract final class AppRouter {
             );
           }
           final screen = MovieDetailScreen(movieId: movieId, tmdbMovie: movie);
-          final memberId = context.watch<LearningMemberSession?>()?.memberId;
+          final auth = context.watch<AuthViewModel?>();
+          final session = context.read<RatingSession?>();
           final service = context.read<RatingApiService?>();
-          if (movie == null || memberId == null || service == null) {
+          if (movie == null ||
+              auth == null ||
+              session == null ||
+              auth.status != AuthStatus.signedIn ||
+              service == null) {
             return screen;
           }
           return ChangeNotifierProvider(
-            key: ValueKey((memberId, movie.id)),
-            create: (_) => MovieDetailViewModel(service, memberId, movie.id),
-            child: screen,
+            key: ValueKey((auth.sessionVersion, movie.id)),
+            create: (_) => MovieDetailViewModel(service, auth, session, movie),
+            child: MovieDetailScreen(
+              key: ValueKey((auth.sessionVersion, movie.id)),
+              movieId: movieId,
+              tmdbMovie: movie,
+            ),
           );
         },
       ),
     ],
   );
+}
+
+String? authRedirect(AuthStatus status, String location) {
+  final atPublic = location == '/login' || location == '/register';
+  final atStart = location == '/start';
+  return switch (status) {
+    AuthStatus.initializing ||
+    AuthStatus.retryRequired => atStart ? null : '/start',
+    AuthStatus.signedOut ||
+    AuthStatus.authenticating => atPublic ? null : '/login',
+    AuthStatus.signedIn => atStart || atPublic ? '/home' : null,
+  };
 }

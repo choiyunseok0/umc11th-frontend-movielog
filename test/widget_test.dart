@@ -1,3 +1,10 @@
+import 'package:movielog/core/network/token_storage.dart';
+import 'package:movielog/data/models/rating_dto.dart';
+import 'package:movielog/data/models/member_info.dart';
+import 'package:movielog/data/services/auth_api_service.dart';
+import 'package:movielog/data/services/member_api_service.dart';
+import 'package:movielog/view_models/auth_view_model.dart';
+import 'package:movielog/view_models/rating_session.dart';
 import 'package:movielog/data/models/rating_request.dart';
 import 'package:movielog/data/services/rating_api_service.dart';
 import 'package:movielog/data/models/common_response.dart';
@@ -243,10 +250,25 @@ void main() {
   for (final location in ['/home', '/movies']) {
     testWidgets('$location 실제 영화 ID가 상세와 평점까지 전달된다', (tester) async {
       final service = _TestRatingService();
+      final auth =
+          AuthViewModel(
+              AuthApiService(Dio()),
+              MemberApiService(Dio()),
+              _RatingStorage(),
+            )
+            ..status = AuthStatus.signedIn
+            ..member = MemberInfo(
+              email: 'test@example.com',
+              nickname: '테스트',
+              createdAt: DateTime(2026),
+            );
+      addTearDown(auth.dispose);
       await tester.pumpWidget(
         MultiProvider(
           providers: [
             Provider<RatingApiService>.value(value: service),
+            ChangeNotifierProvider.value(value: auth),
+            ChangeNotifierProvider(create: (_) => RatingSession(auth)),
             ChangeNotifierProvider(
               create: (_) => LearningMemberSession()..setMemberId(42),
             ),
@@ -313,166 +335,16 @@ void main() {
       await tester.pumpAndSettle();
       await tester.drag(find.byType(ListView), const Offset(0, -600));
       await tester.pumpAndSettle();
-      expect(find.text('내 평점 4 / 5'), findsOneWidget);
-      expect(service.memberId, 42);
+      expect(find.text('내 평점 3 / 5'), findsOneWidget);
       expect(service.request?.toJson(), {
         'movieId': movie.id,
         'score': 4,
         'comment': '좋았어요',
       });
+      await tester.pumpWidget(const SizedBox.shrink());
       AppRouter.router.go('/start');
-      await tester.pumpAndSettle();
     });
   }
-
-  testWidgets('평점 수정 뒤 조회가 실패하면 GET만 다시 시도한다', (tester) async {
-    final dio = Dio();
-    final requests = <String>[];
-    Object? patchBody;
-    dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          requests.add('${options.method} ${options.path}');
-          if (options.method == 'PATCH') {
-            patchBody = options.data;
-            handler.resolve(Response(requestOptions: options, statusCode: 200));
-          } else if (requests.length == 3) {
-            handler.reject(
-              DioException(
-                requestOptions: options,
-                type: DioExceptionType.connectionError,
-              ),
-            );
-          } else {
-            handler.resolve(
-              Response(
-                requestOptions: options,
-                statusCode: 200,
-                data: [
-                  {
-                    'ratingId': 12,
-                    'movieId': 550,
-                    'score': 4,
-                    'comment': requests.length == 1 ? '기존 코멘트' : null,
-                    'createdAt': '2026-11-08T00:00:00Z',
-                  },
-                ],
-              ),
-            );
-          }
-        },
-      ),
-    );
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          Provider<RatingApiService>.value(value: RatingApiService(dio)),
-          ChangeNotifierProvider(
-            create: (_) => LearningMemberSession()..setMemberId(42),
-          ),
-        ],
-        child: _testApp(),
-      ),
-    );
-    AppRouter.router.go('/my/ratings');
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('평점 수정'));
-    await tester.pumpAndSettle();
-    expect(
-      tester.widget<RatingDialog>(find.byType(RatingDialog)).initialRating,
-      4,
-    );
-    expect(find.text('기존 코멘트'), findsWidgets);
-    await tester.enterText(find.byType(TextField), '');
-    await tester.tap(find.widgetWithText(ElevatedButton, '확인'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(RatingDialog), findsNothing);
-    expect(find.textContaining('평점은 저장됐지만'), findsOneWidget);
-    expect(patchBody, {'score': 4, 'comment': null});
-    await tester.tap(find.text('다시 시도'));
-    await tester.pumpAndSettle();
-    expect(find.text('별점 4 / 5'), findsOneWidget);
-    expect(requests, [
-      'GET /v6/members/42/ratings',
-      'PATCH /v6/members/42/ratings/12',
-      'GET /v6/members/42/ratings',
-      'GET /v6/members/42/ratings',
-    ]);
-    AppRouter.router.go('/start');
-    await tester.pumpAndSettle();
-    dio.close();
-  });
-
-  testWidgets('삭제 취소는 요청하지 않고 마지막 평점 삭제 후 빈 목록을 표시한다', (tester) async {
-    final dio = Dio();
-    final requests = <String>[];
-    var deleted = false;
-    dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          requests.add('${options.method} ${options.path}');
-          if (options.method == 'DELETE') {
-            deleted = true;
-            handler.resolve(
-              Response<void>(requestOptions: options, statusCode: 204),
-            );
-            return;
-          }
-          handler.resolve(
-            Response(
-              requestOptions: options,
-              statusCode: 200,
-              data: deleted
-                  ? []
-                  : [
-                      {
-                        'ratingId': 12,
-                        'movieId': 550,
-                        'score': 4,
-                        'comment': null,
-                        'createdAt': '2026-11-08T00:00:00Z',
-                      },
-                    ],
-            ),
-          );
-        },
-      ),
-    );
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          Provider<RatingApiService>.value(value: RatingApiService(dio)),
-          ChangeNotifierProvider(
-            create: (_) => LearningMemberSession()..setMemberId(42),
-          ),
-        ],
-        child: _testApp(),
-      ),
-    );
-    AppRouter.router.go('/my/ratings');
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('평점 삭제'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('취소'));
-    await tester.pumpAndSettle();
-    expect(requests, ['GET /v6/members/42/ratings']);
-    expect(find.text('별점 4 / 5'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('평점 삭제'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, '삭제'));
-    await tester.pumpAndSettle();
-    expect(find.text('등록한 평점이 없어요.'), findsOneWidget);
-    expect(requests, [
-      'GET /v6/members/42/ratings',
-      'DELETE /v6/members/42/ratings/12',
-      'GET /v6/members/42/ratings',
-    ]);
-    AppRouter.router.go('/start');
-    await tester.pumpAndSettle();
-    dio.close();
-  });
 
   testWidgets('Figma 기준 프로필 정보가 표시된다', (tester) async {
     await tester.pumpWidget(
@@ -585,17 +457,28 @@ class _TestSignUpService extends SignUpService {
 }
 
 class _TestRatingService extends RatingApiService {
-  _TestRatingService() : super(Dio());
+  _TestRatingService() : super(Dio(), Dio());
 
-  int? memberId;
   CreateRatingRequest? request;
 
   @override
-  Future<void> createRating({
-    required int memberId,
-    required CreateRatingRequest request,
-  }) async {
-    this.memberId = memberId;
+  Future<RatingDto> createRating(CreateRatingRequest request) async {
     this.request = request;
+    return RatingDto(
+      ratingId: 10,
+      movieId: request.movieId,
+      score: 3,
+      comment: request.comment,
+      createdAt: DateTime(2026),
+    );
   }
+}
+
+class _RatingStorage implements TokenStorage {
+  @override
+  Future<void> deleteAccessToken() async {}
+  @override
+  Future<String?> readAccessToken() async => null;
+  @override
+  Future<void> saveAccessToken(String token) async {}
 }

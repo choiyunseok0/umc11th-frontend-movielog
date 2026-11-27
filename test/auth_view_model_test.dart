@@ -1,0 +1,214 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:movielog/core/network/token_storage.dart';
+import 'package:movielog/data/models/login_models.dart';
+import 'package:movielog/data/models/member_info.dart';
+import 'package:movielog/router/app_router.dart';
+import 'package:movielog/data/services/auth_api_service.dart';
+import 'package:movielog/data/services/member_api_service.dart';
+import 'package:movielog/view_models/auth_view_model.dart';
+
+class _Storage implements TokenStorage {
+  String? token;
+  Completer<void>? writeGate;
+
+  @override
+  Future<void> saveAccessToken(String value) async {
+    await writeGate?.future;
+    token = value;
+  }
+
+  @override
+  Future<String?> readAccessToken() async => token;
+
+  @override
+  Future<void> deleteAccessToken() async {
+    token = null;
+  }
+}
+
+class _AuthApi extends AuthApiService {
+  _AuthApi(this.respond) : super(Dio());
+
+  final Future<LoginResult> Function() respond;
+
+  @override
+  Future<LoginResult> login(LoginRequest request) => respond();
+}
+
+class _MemberApi extends MemberApiService {
+  _MemberApi(this.respond) : super(Dio());
+
+  final Future<MemberInfo> Function() respond;
+  int calls = 0;
+
+  @override
+  Future<MemberInfo> fetchMe() {
+    calls++;
+    return respond();
+  }
+}
+
+void main() {
+  const result = LoginResult(nickname: '테스트', accessToken: 'test-token');
+
+  test('토큰 저장이 끝난 뒤 로그인 상태를 확정한다', () async {
+    final storage = _Storage()..writeGate = Completer<void>();
+    final vm = AuthViewModel(
+      _AuthApi(() async => result),
+      MemberApiService(Dio()),
+      storage,
+    );
+    final login = vm.login('test@example.com', 'test-password');
+    await Future<void>.delayed(Duration.zero);
+    expect(vm.status, AuthStatus.authenticating);
+    storage.writeGate!.complete();
+    await login;
+    expect(vm.status, AuthStatus.signedIn);
+    expect(storage.token, 'test-token');
+    vm.dispose();
+  });
+
+  test('로그인 입력 오류는 세션 만료 안내로 처리하지 않는다', () async {
+    final storage = _Storage();
+    final options = RequestOptions(path: '/v7/auth/login');
+    final vm = AuthViewModel(
+      _AuthApi(() async {
+        throw DioException(
+          requestOptions: options,
+          response: Response(
+            requestOptions: options,
+            statusCode: 401,
+            data: {'code': 'AUTH401_1'},
+          ),
+        );
+      }),
+      MemberApiService(Dio()),
+      storage,
+    );
+    await vm.login('test@example.com', 'wrong');
+    expect(vm.status, AuthStatus.signedOut);
+    expect(vm.sessionExpired, isFalse);
+    expect(vm.message, '이메일 또는 비밀번호를 확인해 주세요.');
+    vm.dispose();
+  });
+
+  test('로그아웃은 진행 중인 토큰 저장이 끝난 뒤 삭제한다', () async {
+    final storage = _Storage()..writeGate = Completer<void>();
+    final vm = AuthViewModel(
+      _AuthApi(() async => result),
+      MemberApiService(Dio()),
+      storage,
+    );
+    final login = vm.login('test@example.com', 'test-password');
+    await Future<void>.delayed(Duration.zero);
+    final logout = vm.logout();
+    storage.writeGate!.complete();
+    await Future.wait([login, logout]);
+    expect(vm.status, AuthStatus.signedOut);
+    expect(storage.token, isNull);
+    expect(vm.storageCleanupInProgress, isFalse);
+    vm.dispose();
+  });
+
+  test('이전 세션의 만료 응답은 새 로그인 상태를 지우지 않는다', () async {
+    final storage = _Storage();
+    final vm = AuthViewModel(
+      _AuthApi(() async => result),
+      MemberApiService(Dio()),
+      storage,
+    );
+    await vm.login('test@example.com', 'test-password');
+    final oldVersion = vm.sessionVersion;
+    await vm.logout();
+    await vm.login('test@example.com', 'test-password');
+    await vm.expireSession(oldVersion);
+    expect(vm.status, AuthStatus.signedIn);
+    expect(storage.token, 'test-token');
+    vm.dispose();
+  });
+  test('저장된 토큰은 서버 검증이 끝난 뒤에만 로그인 상태로 복원한다', () async {
+    final storage = _Storage()..token = 'saved-test-token';
+    final response = Completer<MemberInfo>();
+    final api = _MemberApi(() => response.future);
+    final vm = AuthViewModel(_AuthApi(() async => result), api, storage);
+    final restore = vm.restoreSession();
+    await Future<void>.delayed(Duration.zero);
+    expect(vm.status, AuthStatus.initializing);
+    response.complete(
+      MemberInfo(
+        email: 'test@example.com',
+        nickname: '테스트',
+        createdAt: DateTime(2026),
+      ),
+    );
+    await restore;
+    expect(vm.status, AuthStatus.signedIn);
+    expect(vm.member?.nickname, '테스트');
+    await vm.loadMember();
+    expect(api.calls, 1);
+    vm.dispose();
+  });
+
+  test('복원 중 네트워크 실패는 토큰을 유지하고 재시도할 수 있다', () async {
+    final storage = _Storage()..token = 'saved-test-token';
+    var fail = true;
+    final api = _MemberApi(() async {
+      if (fail) {
+        throw DioException(
+          requestOptions: RequestOptions(path: '/v7/members/me'),
+          type: DioExceptionType.connectionError,
+        );
+      }
+      return MemberInfo(
+        email: 'test@example.com',
+        nickname: '테스트',
+        createdAt: DateTime(2026),
+      );
+    });
+    final vm = AuthViewModel(_AuthApi(() async => result), api, storage);
+    await vm.restoreSession();
+    expect(vm.status, AuthStatus.retryRequired);
+    expect(storage.token, 'saved-test-token');
+    fail = false;
+    await vm.restoreSession();
+    expect(vm.status, AuthStatus.signedIn);
+    vm.dispose();
+  });
+
+  test('복원 중 만료 토큰은 삭제하고 로그아웃한다', () async {
+    final storage = _Storage()..token = 'expired-test-token';
+    final options = RequestOptions(path: '/v7/members/me');
+    final vm = AuthViewModel(
+      _AuthApi(() async => result),
+      _MemberApi(
+        () async => throw DioException(
+          requestOptions: options,
+          response: Response(
+            requestOptions: options,
+            statusCode: 401,
+            data: {'code': 'AUTH401_4'},
+          ),
+        ),
+      ),
+      storage,
+    );
+    await vm.restoreSession();
+    expect(vm.status, AuthStatus.signedOut);
+    expect(vm.sessionExpired, isTrue);
+    expect(storage.token, isNull);
+    vm.dispose();
+  });
+
+  test('인증 상태에 맞춰 시작 화면과 보호 경로를 제어한다', () {
+    expect(authRedirect(AuthStatus.initializing, '/home'), '/start');
+    expect(authRedirect(AuthStatus.retryRequired, '/login'), '/start');
+    expect(authRedirect(AuthStatus.signedOut, '/my/ratings'), '/login');
+    expect(authRedirect(AuthStatus.signedOut, '/register'), isNull);
+    expect(authRedirect(AuthStatus.authenticating, '/login'), isNull);
+    expect(authRedirect(AuthStatus.signedIn, '/login'), '/home');
+    expect(authRedirect(AuthStatus.signedIn, '/my'), isNull);
+  });
+}

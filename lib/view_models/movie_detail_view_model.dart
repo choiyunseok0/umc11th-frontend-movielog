@@ -1,48 +1,69 @@
-// 평점 팝업에서 받은 별점과 코멘트를 서버에 저장하도록
-// Service에 전달하고 그 결과를 팝업에 알려줌
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../core/network/api_error.dart';
+import '../data/models/rating_dto.dart';
 import '../data/models/rating_request.dart';
+import '../data/models/tmdb_movie_dto.dart';
 import '../data/services/rating_api_service.dart';
+import 'auth_view_model.dart';
+import 'rating_session.dart';
 
 class MovieDetailViewModel extends ChangeNotifier {
-
-  // 1. 누가 어떤 영화에 평점을 남기는지 받기
-  // 라우터에서 평점 저장에 사용할 Service, 가입한 회원의 ID, 선택한 영화의 ID를 넘겨받음
-  MovieDetailViewModel(this._service, this.memberId, this.movieId);
+  MovieDetailViewModel(this._service, this._auth, this._session, this.movie)
+    : _version = _auth.sessionVersion {
+    _session.addListener(_onSessionChanged);
+  }
 
   final RatingApiService _service;
-  final int memberId;
-  final int movieId;
+  final AuthViewModel _auth;
+  final RatingSession _session;
+  final TmdbMovieDto movie;
+  final int _version;
   bool isSubmitting = false;
   bool _disposed = false;
 
-  Future<String?> createRating(int score, String comment) async {
-    
-    // 2. 저장 중이면 추가 요청 막기
-    // 처음 요청할 때는 isSubmitiing을 true로 바꾸고 상태가 바뀌었다고 알림
-    if (_disposed || isSubmitting) return '이미 평점을 저장하고 있습니다.';
+  bool get isCurrentSession =>
+      !_disposed &&
+      _auth.status == AuthStatus.signedIn &&
+      _version == _auth.sessionVersion;
+
+  RatingDto? get rating => _session.findByMovieId(movie.id);
+
+  Future<String?> saveRating(int score, String comment) async {
+    if (!isCurrentSession) return '먼저 로그인해 주세요.';
+    if (isSubmitting) return '이미 평점을 저장하고 있습니다.';
     isSubmitting = true;
     notifyListeners();
     try {
-
-      //3. 평점 요청을 만들어 Service에 넘기기
-      // 회원 ID는 요청주소에 사용하고, 영화ID & 별점 & 코멘트는 요청 본문으로 보냄
-      // 실제 서버 통신은 RatingApiService가 담당함
-       
-      await _service.createRating(
-        memberId: memberId,
-        request: CreateRatingRequest(
-          movieId: movieId,
-          score: score,
-          comment: comment,
-        ),
-      );
-
-      // 4. 저장 결과를 팝업에 돌려주기 
+      final previous = rating;
+      final text = comment.trim();
+      final saved = previous == null
+          ? await _service.createRating(
+              CreateRatingRequest(
+                movieId: movie.id,
+                score: score,
+                comment: text,
+              ),
+            )
+          : await _service.updateRating(
+              ratingId: previous.ratingId,
+              score: score,
+              comment: text.isEmpty ? null : text,
+            );
+      if (saved.movieId != movie.id) {
+        throw StateError('저장한 영화 번호가 응답과 다릅니다.');
+      }
+      if (!isCurrentSession) return '로그인 상태가 변경됐어요.';
+      _session.save(saved, movie, _version);
       return null;
     } on DioException catch (error) {
+      if (!isCurrentSession) return '로그인 상태가 변경됐어요.';
+      final code = apiErrorCode(error);
+      if (code == 'AUTH401_2' || code == 'AUTH401_3' || code == 'AUTH401_4') {
+        await _auth.expireSession(_version);
+        return '로그인이 만료됐어요. 다시 로그인해 주세요.';
+      }
       return writeRatingErrorMessage(error);
     } catch (_) {
       return '평점 저장 결과를 확인하지 못했습니다.';
@@ -54,9 +75,14 @@ class MovieDetailViewModel extends ChangeNotifier {
     }
   }
 
+  void _onSessionChanged() {
+    if (isCurrentSession) notifyListeners();
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    _session.removeListener(_onSessionChanged);
     super.dispose();
   }
 }

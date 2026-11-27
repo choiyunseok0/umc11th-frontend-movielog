@@ -1,3 +1,4 @@
+import 'package:go_router/go_router.dart';
 // 사용자가 보는 회원가입 화면
 // 사용자에게 가입 정보를 입력받고, VM에 전달하고, 결과를 화면에 보여주는 파일임
 import 'package:flutter/material.dart';
@@ -232,7 +233,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     // 3. 요청하는 동안에는 화면이 ViewModel의 상태를 받아서 바꿈
     // VM이 가입 요청을 시작하고 notifyListeners()를 호출하면 화면이 다시 그려지면서 vm.isSubmitting을 읽음
     final vm = context.watch<SignUpViewModel?>();
@@ -353,7 +353,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               children: [
                                 const Text('이미 계정이 있나요?'),
                                 TextButton(
-                                  onPressed: () {},
+                                  onPressed: () => context.go('/login'),
                                   child: const Text('로그인'),
                                 ),
                               ],

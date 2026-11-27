@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class ProfileEditButton extends StatelessWidget {
-  const ProfileEditButton({super.key});
+  const ProfileEditButton({super.key, this.onPressed});
+
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +16,7 @@ class ProfileEditButton extends StatelessWidget {
         width: 168,
         height: 52,
         child: TextButton.icon(
-          onPressed: () {},
+          onPressed: onPressed,
           style: TextButton.styleFrom(
             foregroundColor: colors.primary,
             side: BorderSide(color: colors.primary),

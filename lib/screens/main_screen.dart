@@ -1,43 +1,60 @@
+import 'package:provider/provider.dart';
+
+import '../view_models/auth_view_model.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
-class MainScreen extends StatelessWidget {
+class MainScreen extends StatefulWidget {
   const MainScreen({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<AuthViewModel?>()?.loadMember();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        body: navigationShell,
+        body: widget.navigationShell,
         bottomNavigationBar: NavigationBar(
-          selectedIndex: navigationShell.currentIndex,
+          selectedIndex: widget.navigationShell.currentIndex,
           labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
           onDestinationSelected: (index) {
-            navigationShell.goBranch(
+            widget.navigationShell.goBranch(
               index,
-              initialLocation: index == navigationShell.currentIndex,
+              initialLocation: index == widget.navigationShell.currentIndex,
             );
           },
           destinations: [
             _destination(
               context,
-              selected: navigationShell.currentIndex == 0,
+              selected: widget.navigationShell.currentIndex == 0,
               assetPath: 'assets/icons/home.svg',
               label: '홈',
             ),
             _destination(
               context,
-              selected: navigationShell.currentIndex == 1,
+              selected: widget.navigationShell.currentIndex == 1,
               assetPath: 'assets/icons/movie.svg',
               label: '영화',
             ),
             _destination(
               context,
-              selected: navigationShell.currentIndex == 2,
+              selected: widget.navigationShell.currentIndex == 2,
               assetPath: 'assets/icons/person.svg',
               label: '마이',
             ),

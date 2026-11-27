@@ -1,3 +1,13 @@
+import 'view_models/rating_session.dart';
+import 'core/network/auth_interceptor.dart';
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:go_router/go_router.dart';
+
+import 'core/network/token_storage.dart';
+import 'data/services/auth_api_service.dart';
+import 'data/services/member_api_service.dart';
+import 'view_models/auth_view_model.dart';
 import 'view_models/learning_member_session.dart';
 
 // 만든 객체를 연결하기
@@ -29,19 +39,97 @@ class MovieLogApp extends StatelessWidget {
           create: (_) => TmdbMovieService(createTmdbClient()),
         ),
         Provider(create: (_) => createMovieLogClient()),
+        Provider<TokenStorage>(
+          create: (_) => SecureTokenStorage(const FlutterSecureStorage()),
+        ),
+        Provider<AuthInterceptor>(
+          create: (context) => AuthInterceptor(context.read<TokenStorage>()),
+        ),
+        Provider<AuthApiService>(
+          create: (context) => AuthApiService(context.read()),
+        ),
+        Provider<MemberApiService>(
+          create: (context) => MemberApiService(
+            createAuthenticatedMovieLogClient(
+              context.read<TokenStorage>(),
+              interceptor: context.read<AuthInterceptor>(),
+            ),
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => AuthViewModel(
+            context.read<AuthApiService>(),
+            context.read<MemberApiService>(),
+            context.read<TokenStorage>(),
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => RatingSession(context.read<AuthViewModel>()),
+        ),
         Provider<SignUpService>(
           create: (context) => SignUpService(context.read()),
         ),
         Provider<RatingApiService>(
-          create: (context) => RatingApiService(context.read()),
+          create: (context) => RatingApiService(
+            context.read(),
+            createAuthenticatedMovieLogClient(
+              context.read<TokenStorage>(),
+              interceptor: context.read<AuthInterceptor>(),
+            ),
+          ),
         ),
       ],
-      child: MaterialApp.router(
-        debugShowCheckedModeBanner: false,
-        title: 'MovieLog',
-        theme: AppTheme.light,
-        routerConfig: AppRouter.router,
-      ),
+      child: const _RoutedApp(),
+    );
+  }
+}
+
+class _RoutedApp extends StatefulWidget {
+  const _RoutedApp();
+
+  @override
+  State<_RoutedApp> createState() => _RoutedAppState();
+}
+
+class _RoutedAppState extends State<_RoutedApp> {
+  late final GoRouter _router;
+  late final AuthViewModel _auth;
+
+  @override
+  void initState() {
+    super.initState();
+    final auth = context.read<AuthViewModel>();
+    _auth = auth;
+    final interceptor = context.read<AuthInterceptor>();
+    interceptor.sessionVersion = () => auth.sessionVersion;
+    interceptor.onSessionExpired = auth.expireSession;
+    _auth.addListener(_clearMemberSession);
+    _router = AppRouter.createRouter(auth: auth);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) auth.restoreSession();
+    });
+  }
+
+  void _clearMemberSession() {
+    if (_auth.status == AuthStatus.signedOut) {
+      context.read<LearningMemberSession>().clear();
+    }
+  }
+
+  @override
+  void dispose() {
+    _auth.removeListener(_clearMemberSession);
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      debugShowCheckedModeBanner: false,
+      title: 'MovieLog',
+      theme: AppTheme.light,
+      routerConfig: _router,
     );
   }
 }
