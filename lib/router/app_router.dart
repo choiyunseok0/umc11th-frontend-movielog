@@ -1,3 +1,7 @@
+import '../data/services/member_api_service.dart';
+import '../screens/profile_edit_screen.dart';
+import '../view_models/profile_edit_view_model.dart';
+import '../widgets/movielog_button.dart';
 import '../view_models/auth_view_model.dart';
 import '../screens/login_screen.dart';
 import '../view_models/movie_detail_view_model.dart';
@@ -132,6 +136,31 @@ abstract final class AppRouter {
             ],
           ),
         ],
+      ),
+      GoRoute(
+        path: '$myPagePath/profile/edit',
+        builder: (context, state) {
+          final auth = context.watch<AuthViewModel>();
+          if (auth.member == null) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('프로필 수정'), centerTitle: true),
+              body: Center(
+                child: auth.memberStatus == MemberLoadStatus.error
+                    ? MovieLogButton(
+                        label: '다시 시도',
+                        onPressed: () => auth.loadMember(force: true),
+                      )
+                    : const CircularProgressIndicator(),
+              ),
+            );
+          }
+          return ChangeNotifierProvider(
+            key: ValueKey(auth.sessionVersion),
+            create: (context) =>
+                ProfileEditViewModel(context.read<MemberApiService>(), auth),
+            child: const ProfileEditScreen(),
+          );
+        },
       ),
       GoRoute(
         path: '$myPagePath/ratings',

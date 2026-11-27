@@ -10,7 +10,18 @@ class MemberApiService {
 
   Future<MemberInfo> fetchMe() async {
     final response = await _dio.get<Map<String, dynamic>>('/v7/members/me');
-    final data = response.data;
+    return _parseMember(response.data);
+  }
+
+  Future<MemberInfo> updateNickname(String nickname) async {
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/v7/members/me',
+      data: {'nickname': nickname},
+    );
+    return _parseMember(response.data);
+  }
+
+  MemberInfo _parseMember(Map<String, dynamic>? data) {
     if (data == null) throw StateError('내 정보 응답이 없습니다.');
 
     final common = CommonResponse<MemberInfo>.fromJson(

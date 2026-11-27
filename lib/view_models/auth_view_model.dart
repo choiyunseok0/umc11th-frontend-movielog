@@ -171,6 +171,13 @@ class AuthViewModel extends ChangeNotifier {
     if (_isCurrent(version)) _notify();
   }
 
+  void updateMember(MemberInfo updated) {
+    if (_disposed || status != AuthStatus.signedIn) return;
+    member = updated;
+    memberStatus = MemberLoadStatus.success;
+    _notify();
+  }
+
   Future<void> expireSession(int requestSessionVersion) async {
     if (!_isCurrent(requestSessionVersion)) return;
     await _clearCurrentSession(expired: true);
